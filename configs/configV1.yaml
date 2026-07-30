@@ -1,0 +1,94 @@
+experiment:
+  version: v1
+  name: NAFNet_small_seed1234
+  seed: 1234
+  output_root: experiments
+
+data:
+  root: /root/autodl-tmp/pro/publicdata/LSUI19_dup_train
+  train_manifest: splits/lsui19/train.tsv
+  validation_manifest: splits/lsui19/validation.tsv
+  test_manifest: splits/lsui19/test.tsv
+  patch_size: 256
+  batch_size: 4
+  num_workers: 4
+  pin_memory: true
+  pad_if_smaller: true
+  augmentation:
+    hflip: true
+    vflip: true
+    rot90: true
+
+model:
+  type: nafnet_small
+  img_channel: 3
+  width: 32
+  enc_blk_nums: [2, 2, 2]
+  middle_blk_num: 4
+  dec_blk_nums: [2, 2, 2]
+
+loss:
+  name: charbonnier
+  epsilon: 0.001
+
+optimizer:
+  name: AdamW
+  learning_rate: 0.0002
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+
+scheduler:
+  name: none
+
+training:
+  epochs: 200
+  amp: true
+  deterministic: false
+  validate_every: 1
+  save_every: 10
+  gradient_clip_norm: null
+  resume: null
+  fail_on_nonfinite: true
+
+checkpoint:
+  primary: psnr
+  save_best_psnr: true
+  save_best_ssim: true
+  save_best_val_loss: true
+  save_last: true
+  save_periodic: true
+
+test:
+  auto_run_after_training: true
+  checkpoint: best_psnr
+  run_dir: null
+  allow_overwrite: false
+  save_all_enhanced_images: false
+
+  visualization:
+    enabled: true
+    num_samples: 10
+    random_seed: 3407
+    columns:
+      - input
+      - enhanced
+      - gt
+    grid_rows: 10
+    grid_columns: 3
+    cell_width: 512
+    cell_height: 512
+    preserve_aspect_ratio: true
+    add_labels: true
+
+metrics:
+  data_range: 1.0
+  crop_border: 0
+  ssim_window_size: 11
+  ssim_sigma: 1.5
+
+logging:
+  console: true
+  save_train_log: true
+  save_validation_log: true
+  save_test_log: true
+  save_metrics_history_json: true
