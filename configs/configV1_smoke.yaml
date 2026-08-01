@@ -93,4 +93,4 @@ logging:
   save_validation_log: true
   save_test_log: true
   save_metrics_history_json: true
-  log_every_steps: 10
+  log_every_steps: 1
