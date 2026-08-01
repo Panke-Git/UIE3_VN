@@ -363,6 +363,7 @@ def validate_v1_config(
             "run_dir",
             "allow_overwrite",
             "save_all_enhanced_images",
+            "output_size",
             "visualization",
         ),
     )
@@ -372,6 +373,11 @@ def validate_v1_config(
     _nullable_string(test, "test", "run_dir")
     _bool(test, "test", "allow_overwrite")
     _bool(test, "test", "save_all_enhanced_images")
+    output_size = test.get("output_size")
+    if output_size is not None and (
+        type(output_size) is not int or output_size < 1
+    ):
+        raise ValueError("test.output_size must be null or an integer >= 1.")
     visualization = _section(test, "visualization")
     _require_keys(
         visualization,
@@ -446,6 +452,7 @@ def validate_v1_config(
             "save_validation_log",
             "save_test_log",
             "save_metrics_history_json",
+            "log_every_steps",
         ),
     )
     for key in (
@@ -456,6 +463,7 @@ def validate_v1_config(
         "save_metrics_history_json",
     ):
         _bool(logging, "logging", key)
+    _integer(logging, "logging", "log_every_steps", minimum=1)
     if auto_test and not checkpoint["save_best_psnr"]:
         raise ValueError(
             "test.auto_run_after_training=true requires "

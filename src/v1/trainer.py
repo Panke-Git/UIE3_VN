@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from contextlib import nullcontext
-from typing import Any, Dict, Iterable, List, Mapping
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 import torch
 
@@ -12,6 +12,16 @@ from src.common.metrics.image_metrics import (
     rgb_psnr_per_image,
     rgb_ssim_per_image,
 )
+
+
+ProgressCallback = Callable[[int, Optional[int], Mapping[str, Any]], None]
+
+
+def _loader_length(data_loader: Iterable[Mapping[str, Any]]) -> Optional[int]:
+    try:
+        return len(data_loader)  # type: ignore[arg-type]
+    except TypeError:
+        return None
 
 
 def _make_grad_scaler(enabled: bool) -> Any:
@@ -137,14 +147,18 @@ class V1Trainer:
         }
 
     def train_epoch(
-        self, data_loader: Iterable[Mapping[str, Any]]
+        self,
+        data_loader: Iterable[Mapping[str, Any]],
+        *,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> Dict[str, Any]:
         losses: List[float] = []
         applied_steps = 0
         skipped_steps = 0
         learning_rate = float(self.optimizer.param_groups[0]["lr"])
         amp_scale = float(self.scaler.get_scale())
-        for batch in data_loader:
+        total_batches = _loader_length(data_loader)
+        for batch_index, batch in enumerate(data_loader, start=1):
             result = self.train_step(batch)
             losses.append(result["loss"])
             learning_rate = result["learning_rate"]
@@ -153,6 +167,8 @@ class V1Trainer:
                 applied_steps += 1
             else:
                 skipped_steps += 1
+            if progress_callback is not None:
+                progress_callback(batch_index, total_batches, result)
         if not losses:
             raise ValueError("Training DataLoader produced no batches.")
         train_loss = sum(losses) / len(losses)
@@ -168,14 +184,18 @@ class V1Trainer:
 
     @torch.no_grad()
     def validate(
-        self, data_loader: Iterable[Mapping[str, Any]]
+        self,
+        data_loader: Iterable[Mapping[str, Any]],
+        *,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> Dict[str, Any]:
         was_training = self.model.training
         self.model.eval()
         records: List[Dict[str, Any]] = []
         losses: List[float] = []
         try:
-            for batch in data_loader:
+            total_batches = _loader_length(data_loader)
+            for batch_index, batch in enumerate(data_loader, start=1):
                 inputs = batch["input"].to(self.device, non_blocking=True)
                 targets = batch["target"].to(self.device, non_blocking=True)
                 require_finite_tensor("validation input", inputs)
@@ -230,6 +250,17 @@ class V1Trainer:
                             "psnr_rgb": float(psnr_values[index].detach().cpu()),
                             "ssim_rgb": float(ssim_values[index].detach().cpu()),
                         }
+                    )
+                if progress_callback is not None:
+                    progress_callback(
+                        batch_index,
+                        total_batches,
+                        {
+                            "loss": float(loss.detach().cpu()),
+                            "processed_samples": len(records),
+                            "psnr": float(psnr_values.mean().detach().cpu()),
+                            "ssim": float(ssim_values.mean().detach().cpu()),
+                        },
                     )
         finally:
             self.model.train(was_training)

@@ -63,7 +63,8 @@ test:
   checkpoint: best_psnr
   run_dir: null
   allow_overwrite: false
-  save_all_enhanced_images: false
+  save_all_enhanced_images: true
+  output_size: 256
 
   visualization:
     enabled: true
@@ -75,10 +76,10 @@ test:
       - gt
     grid_rows: 10
     grid_columns: 3
-    cell_width: 512
-    cell_height: 512
-    preserve_aspect_ratio: true
-    add_labels: true
+    cell_width: 256
+    cell_height: 256
+    preserve_aspect_ratio: false
+    add_labels: false
 
 metrics:
   data_range: 1.0
@@ -92,3 +93,4 @@ logging:
   save_validation_log: true
   save_test_log: true
   save_metrics_history_json: true
+  log_every_steps: 10

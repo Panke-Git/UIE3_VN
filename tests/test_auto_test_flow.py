@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 
 import pytest
+from PIL import Image
 
 from src.common.experiment.experiment import run_training_and_auto_test
-from src.v1.test_v1 import ensure_test_outputs_available
-from src.v1.train_v1 import _validation_due
+from src.v1.test_v1 import _resize_output_image, ensure_test_outputs_available
+from src.v1.train_v1 import _progress_log_due, _validation_due
 
 
 def _run(tmp_path, training, testing, progress=None):
@@ -76,3 +77,18 @@ def test_validation_cadence_always_includes_final_epoch() -> None:
         for epoch in range(5)
         if _validation_due(epoch, total_epochs=5, validate_every=2)
     ] == [1, 3, 4]
+
+
+def test_progress_logging_includes_first_interval_and_last_batch() -> None:
+    assert [
+        batch
+        for batch in range(1, 24)
+        if _progress_log_due(batch, total_batches=23, log_every_steps=10)
+    ] == [1, 10, 20, 23]
+
+
+def test_saved_test_image_is_resized_to_configured_square() -> None:
+    source = Image.new("RGB", (19, 31), (10, 20, 30))
+    resized = _resize_output_image(source, 256)
+    assert resized.size == (256, 256)
+    assert source.size == (19, 31)

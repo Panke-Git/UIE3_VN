@@ -104,6 +104,17 @@ def _tensor_to_rgb_image(tensor: Any) -> Image.Image:
     return Image.fromarray(uint8, mode="RGB")
 
 
+def _resize_output_image(
+    image: Image.Image, output_size: Optional[int]
+) -> Image.Image:
+    """Resize only saved test images; metric tensors remain full-resolution."""
+
+    if output_size is None:
+        return image.copy()
+    size = int(output_size)
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def _single_string(value: Any, field: str) -> str:
     if isinstance(value, str):
         return value
@@ -182,6 +193,7 @@ def execute_test(
     visual_by_id: Dict[str, Dict[str, Any]] = {}
     records: List[Dict[str, Any]] = []
     start_time = _utc_now()
+    output_size = config["test"]["output_size"]
     all_images_dir = result_dir / "test_all_enhanced"
     if config["test"]["save_all_enhanced_images"]:
         all_images_dir.mkdir(parents=True, exist_ok=True)
@@ -231,12 +243,20 @@ def execute_test(
             if sample_id in chosen_ids:
                 visual_by_id[sample_id] = {
                     **record,
-                    "input": _tensor_to_rgb_image(inputs[0]),
-                    "enhanced": _tensor_to_rgb_image(predictions[0]),
-                    "gt": _tensor_to_rgb_image(targets[0]),
+                    "input": _resize_output_image(
+                        _tensor_to_rgb_image(inputs[0]), output_size
+                    ),
+                    "enhanced": _resize_output_image(
+                        _tensor_to_rgb_image(predictions[0]), output_size
+                    ),
+                    "gt": _resize_output_image(
+                        _tensor_to_rgb_image(targets[0]), output_size
+                    ),
                 }
             if config["test"]["save_all_enhanced_images"]:
-                _tensor_to_rgb_image(predictions[0]).save(
+                _resize_output_image(
+                    _tensor_to_rgb_image(predictions[0]), output_size
+                ).save(
                     all_images_dir / f"{sample_id}_enhanced.png", format="PNG"
                 )
 
@@ -257,6 +277,9 @@ def execute_test(
         "mean_psnr_rgb": sum(row["psnr_rgb"] for row in records) / len(records),
         "mean_ssim_rgb": sum(row["ssim_rgb"] for row in records) / len(records),
         "all_metrics_finite": all(math.isfinite(value) for value in values),
+        "saved_output_size": (
+            None if output_size is None else [int(output_size), int(output_size)]
+        ),
         "test_start_time": start_time,
         "test_end_time": _utc_now(),
     }

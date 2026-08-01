@@ -59,6 +59,18 @@ def _validation_due(epoch: int, total_epochs: int, validate_every: int) -> bool:
     return (epoch + 1) % validate_every == 0 or epoch == total_epochs - 1
 
 
+def _progress_log_due(
+    batch_index: int, total_batches: Optional[int], log_every_steps: int
+) -> bool:
+    """Log the first batch, configured intervals, and the final batch."""
+
+    return (
+        batch_index == 1
+        or batch_index % log_every_steps == 0
+        or (total_batches is not None and batch_index == total_batches)
+    )
+
+
 def _initial_run_info(
     config: Mapping[str, Any], paths: RunPaths, config_path: Path
 ) -> Dict[str, Any]:
@@ -425,6 +437,7 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
             )
         total_epochs = int(config["training"]["epochs"])
         validate_every = int(config["training"]["validate_every"])
+        log_every_steps = int(config["logging"]["log_every_steps"])
         save_metrics_history = bool(
             config["logging"]["save_metrics_history_json"]
         )
@@ -441,7 +454,30 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
             progress["stage"] = "training"
             if getattr(loaders["train"], "generator", None) is not None:
                 loaders["train"].generator.manual_seed(seed + epoch)
-            train_result = trainer.train_epoch(loaders["train"])
+
+            def log_train_progress(
+                batch_index: int,
+                total_batches: Optional[int],
+                batch_result: Mapping[str, Any],
+            ) -> None:
+                if _progress_log_due(
+                    batch_index, total_batches, log_every_steps
+                ):
+                    train_logger.info(
+                        "epoch=%d/%d train_batch=%d/%s loss=%.8f "
+                        "global_step=%d lr=%.8g",
+                        epoch + 1,
+                        total_epochs,
+                        batch_index,
+                        total_batches if total_batches is not None else "?",
+                        float(batch_result["loss"]),
+                        int(batch_result["global_step"]),
+                        float(batch_result["learning_rate"]),
+                    )
+
+            train_result = trainer.train_epoch(
+                loaders["train"], progress_callback=log_train_progress
+            )
             progress["global_step"] = trainer.global_step
             validation_due = _validation_due(
                 epoch, total_epochs, validate_every
@@ -472,9 +508,11 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                         paths.log / "metrics_history.json", history
                     )
                 train_logger.info(
-                    "epoch=%d global_step=%d train_loss=%.8f validation=skipped "
+                    "epoch=%d/%d global_step=%d train_loss=%.8f "
+                    "validation=skipped "
                     "optimizer_applied_steps=%d skipped_amp_overflow_steps=%d",
-                    epoch,
+                    epoch + 1,
+                    total_epochs,
                     trainer.global_step,
                     train_result["train_loss"],
                     train_result["optimizer_applied_steps"],
@@ -495,10 +533,39 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 continue
             progress["validation"] = "RUNNING"
             progress["stage"] = "validation"
+
+            def log_validation_progress(
+                batch_index: int,
+                total_batches: Optional[int],
+                batch_result: Mapping[str, Any],
+            ) -> None:
+                if _progress_log_due(
+                    batch_index, total_batches, log_every_steps
+                ):
+                    val_logger.info(
+                        "epoch=%d/%d val_batch=%d/%s processed=%d "
+                        "loss=%.8f psnr=%.8f ssim=%.8f",
+                        epoch + 1,
+                        total_epochs,
+                        batch_index,
+                        total_batches if total_batches is not None else "?",
+                        int(batch_result["processed_samples"]),
+                        float(batch_result["loss"]),
+                        float(batch_result["psnr"]),
+                        float(batch_result["ssim"]),
+                    )
+
             try:
-                validation = trainer.validate(loaders["validation"])
+                validation = trainer.validate(
+                    loaders["validation"],
+                    progress_callback=log_validation_progress,
+                )
             except Exception:
-                val_logger.exception("Validation failed at epoch %d", epoch)
+                val_logger.exception(
+                    "Validation failed at epoch %d/%d",
+                    epoch + 1,
+                    total_epochs,
+                )
                 raise
             progress["validation"] = "COMPLETED"
             updates = tracker.consider(
@@ -548,16 +615,18 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 },
             )
             val_logger.info(
-                "epoch=%d val_loss=%.8f psnr=%.8f ssim=%.8f",
-                epoch,
+                "epoch=%d/%d val_loss=%.8f psnr=%.8f ssim=%.8f",
+                epoch + 1,
+                total_epochs,
                 validation["val_loss"],
                 validation["psnr_rgb"],
                 validation["ssim_rgb"],
             )
             train_logger.info(
-                "epoch=%d global_step=%d train_loss=%.8f "
+                "epoch=%d/%d global_step=%d train_loss=%.8f "
                 "optimizer_applied_steps=%d skipped_amp_overflow_steps=%d",
-                epoch,
+                epoch + 1,
+                total_epochs,
                 trainer.global_step,
                 train_result["train_loss"],
                 train_result["optimizer_applied_steps"],

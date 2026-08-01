@@ -21,8 +21,11 @@ middle_blk_num: 4
 dec_blk_nums: [2, 2, 2]
 ```
 
-Inputs and targets are Pillow-decoded RGB float32 tensors in `[0,1]`. The
-model accepts and returns `[B,3,H,W]`. Its three encoder scales require an
+Inputs and targets are Pillow-decoded RGB float32 tensors in `[0,1]`. Training
+uses paired random `patch_size` crops (padding smaller images first when
+enabled); it does not resize every source image. Validation and test use the
+complete original image. The model accepts and returns `[B,3,H,W]`. Its three
+encoder scales require an
 internal multiple of 8, so ordinary NAFNet pads only the right and bottom with
 zeros, applies exactly one global residual inside `NAFNet.forward`, and crops
 back to the original height and width. No wrapper residual, sigmoid, or model
@@ -80,10 +83,16 @@ artifacts as the default run:
 python -m src.v1.train_v1 --config configs/configV1_smoke.yaml
 ```
 
-On a 24 GB GPU, `batch_size: 8` is a conservative first increase for the
-default 256×256, width-32 model. Try 16 afterward if memory monitoring shows
-enough headroom; reduce it if CUDA reports out of memory. The code only
-requires a positive batch size and does not impose an artificial upper bound.
+On a 24 GB GPU, if `batch_size: 8` peaks near 6 GB, try 16 next and then 24 if
+peak memory still leaves several GB of headroom. Batch 32 is too close to the
+limit under a simple linear estimate and is not the recommended next jump.
+The code only requires a positive batch size and does not impose an artificial
+upper bound, but a larger batch changes optimization behavior and is not
+automatically better.
+
+With `logging.console: true`, train and validation progress is printed to the
+terminal. `logging.log_every_steps` controls the batch interval; the first and
+last batch are always printed.
 
 A tmux session is optional and remains under user control:
 
@@ -122,14 +131,17 @@ quality or metrics. It saves:
 ```text
 result/test_visualization_samples.json
 result/test_samples/{sample_id}_enhanced.png
+result/test_all_enhanced/{sample_id}_enhanced.png
 result/test_grid_10x3.png
 ```
 
-By default, the grid is ten rows by three columns in
-`Input / Enhanced / GT` order. The row count, requested sample count, cell
-size, aspect-ratio behavior, and labels are YAML-controlled; the output name
-follows `test_grid_{rows}x3.png`. Resizing is visualization-only and never
-feeds PSNR or SSIM.
+By default, saved test enhancements are resized to 256×256 through
+`test.output_size`, and all test enhancements are saved because
+`test.save_all_enhanced_images` is enabled. The grid is ten rows by three
+columns in `Input / Enhanced / GT` order, with every cell occupying exactly
+256×256. Test inference and PSNR/SSIM still use the original full resolution;
+resizing happens only while saving output images. The output name follows
+`test_grid_{rows}x3.png`.
 
 ## Standalone test
 

@@ -54,6 +54,10 @@ def test_checked_in_smoke_config_loads() -> None:
     config = load_v1_config(PROJECT_ROOT / "configs/configV1_smoke.yaml")
     assert config["training"]["epochs"] == 2
     assert config["data"]["batch_size"] == 8
+    assert config["test"]["output_size"] == 256
+    assert config["test"]["save_all_enhanced_images"] is True
+    assert config["test"]["visualization"]["cell_width"] == 256
+    assert config["test"]["visualization"]["cell_height"] == 256
 
 
 def test_default_config_is_the_train_and_test_cli_default() -> None:
@@ -232,7 +236,16 @@ def test_supported_tunable_values_are_yaml_controlled(tmp_path: Path) -> None:
             "ssim_sigma": 1.0,
         }
     )
-    config["logging"] = {key: False for key in config["logging"]}
+    config["logging"].update(
+        {
+            "console": False,
+            "save_train_log": False,
+            "save_validation_log": False,
+            "save_test_log": False,
+            "save_metrics_history_json": False,
+            "log_every_steps": 3,
+        }
+    )
 
     validated = validate_v1_config(config)
 
