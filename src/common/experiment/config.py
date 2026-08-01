@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
@@ -10,14 +11,6 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 V1_CONFIG_PATH = PROJECT_ROOT / "configs/configV1.yaml"
-FIXED_MODEL_CONFIG = {
-    "type": "nafnet_small",
-    "img_channel": 3,
-    "width": 32,
-    "enc_blk_nums": [2, 2, 2],
-    "middle_blk_num": 4,
-    "dec_blk_nums": [2, 2, 2],
-}
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _VERSION_KEYS = {"version", "variant", "model_version"}
 
@@ -108,6 +101,8 @@ def _number(
     if type(value) not in (int, float):
         raise ValueError(f"{section_name}.{key} must be numeric, got {value!r}.")
     result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{section_name}.{key} must be finite, got {value!r}.")
     if minimum is not None:
         invalid = result <= minimum if strictly_greater else result < minimum
         if invalid:
@@ -134,6 +129,19 @@ def _nullable_string(
     return value
 
 
+def _integer_list(
+    section: Mapping[str, Any], section_name: str, key: str
+) -> list[int]:
+    value = section.get(key)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{section_name}.{key} must be a non-empty integer list.")
+    if any(type(item) is not int or item < 0 for item in value):
+        raise ValueError(
+            f"{section_name}.{key} values must be integers >= 0, got {value!r}."
+        )
+    return list(value)
+
+
 def _validate_relative_path(value: str, field: str) -> None:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts:
@@ -143,7 +151,7 @@ def _validate_relative_path(value: str, field: str) -> None:
 def validate_v1_config(
     config: Any, *, entry_point: str = "v1"
 ) -> Dict[str, Any]:
-    """Validate all v1 fields and fixed baseline semantics."""
+    """Validate the v1 schema, supported components, types, and safe ranges."""
 
     if not isinstance(config, dict):
         raise ValueError("YAML config root must be a mapping.")
@@ -178,17 +186,8 @@ def validate_v1_config(
         raise ValueError(
             "experiment.name must use only letters, digits, '.', '_' and '-'."
         )
-    seed = _integer(experiment, "experiment", "seed")
-    seed_tokens = [int(value) for value in re.findall(r"seed(\d+)", name, re.I)]
-    if len(seed_tokens) != 1 or seed_tokens[0] != seed:
-        raise ValueError(
-            "experiment.name must contain exactly one seed<number> token matching "
-            f"experiment.seed={seed}; got {name!r}."
-        )
-    output_root = _string(experiment, "experiment", "output_root")
-    _validate_relative_path(output_root, "experiment.output_root")
-    if output_root != "experiments":
-        raise ValueError("experiment.output_root must equal 'experiments'.")
+    _integer(experiment, "experiment", "seed")
+    _string(experiment, "experiment", "output_root")
 
     data = _section(config, "data")
     _require_keys(
@@ -221,38 +220,49 @@ def validate_v1_config(
             raise ValueError(
                 f"data.{key} cannot be read as UTF-8: {manifest_path}"
             ) from exc
-    if _integer(data, "data", "patch_size", minimum=1) != 256:
-        raise ValueError("data.patch_size must equal 256 for v1.")
-    if _integer(data, "data", "batch_size", minimum=1) != 4:
-        raise ValueError("data.batch_size must equal 4 for v1.")
-    if _integer(data, "data", "num_workers") != 4:
-        raise ValueError("data.num_workers must equal 4 for v1.")
-    if not _bool(data, "data", "pin_memory"):
-        raise ValueError("data.pin_memory must be true for v1.")
-    if not _bool(data, "data", "pad_if_smaller"):
-        raise ValueError("data.pad_if_smaller must be true for v1.")
+    _integer(data, "data", "patch_size", minimum=1)
+    _integer(data, "data", "batch_size", minimum=1)
+    _integer(data, "data", "num_workers")
+    _bool(data, "data", "pin_memory")
+    _bool(data, "data", "pad_if_smaller")
     augmentation = _section(data, "augmentation")
     _require_keys(augmentation, "data.augmentation", ("hflip", "vflip", "rot90"))
     for key in ("hflip", "vflip", "rot90"):
-        if not _bool(augmentation, "data.augmentation", key):
-            raise ValueError(f"data.augmentation.{key} must be true for v1.")
+        _bool(augmentation, "data.augmentation", key)
 
     model = _section(config, "model")
-    if dict(model) != FIXED_MODEL_CONFIG:
+    _require_keys(
+        model,
+        "model",
+        (
+            "type",
+            "img_channel",
+            "width",
+            "enc_blk_nums",
+            "middle_blk_num",
+            "dec_blk_nums",
+        ),
+    )
+    if _string(model, "model", "type") != "nafnet_small":
+        raise ValueError("v1 supports only model.type='nafnet_small'.")
+    if _integer(model, "model", "img_channel", minimum=1) != 3:
+        raise ValueError("v1 RGB data and metrics require model.img_channel=3.")
+    _integer(model, "model", "width", minimum=1)
+    encoder_blocks = _integer_list(model, "model", "enc_blk_nums")
+    _integer(model, "model", "middle_blk_num")
+    decoder_blocks = _integer_list(model, "model", "dec_blk_nums")
+    if len(encoder_blocks) != len(decoder_blocks):
         raise ValueError(
-            f"model must equal the fixed NAFNet-small config {FIXED_MODEL_CONFIG}; "
-            f"got {dict(model)}."
+            "model.enc_blk_nums and model.dec_blk_nums must have equal lengths."
         )
 
     loss = _section(config, "loss")
     _require_keys(loss, "loss", ("name", "epsilon"))
     if _string(loss, "loss", "name").casefold() != "charbonnier":
         raise ValueError("loss.name must equal 'charbonnier'.")
-    epsilon = _number(
+    _number(
         loss, "loss", "epsilon", minimum=0.0, strictly_greater=True
     )
-    if epsilon != 0.001:
-        raise ValueError("loss.epsilon must equal 0.001 for v1.")
 
     optimizer = _section(config, "optimizer")
     _require_keys(
@@ -262,27 +272,25 @@ def validate_v1_config(
     )
     if _string(optimizer, "optimizer", "name").casefold() != "adamw":
         raise ValueError("optimizer.name must equal 'AdamW'.")
-    learning_rate = _number(
+    _number(
         optimizer,
         "optimizer",
         "learning_rate",
         minimum=0.0,
         strictly_greater=True,
     )
-    if learning_rate != 0.0002:
-        raise ValueError("optimizer.learning_rate must equal 0.0002 for v1.")
-    if _number(optimizer, "optimizer", "weight_decay", minimum=0.0) != 0.0:
-        raise ValueError("optimizer.weight_decay must equal 0.0 for v1.")
+    _number(optimizer, "optimizer", "weight_decay", minimum=0.0)
     betas = optimizer.get("betas")
     if (
         not isinstance(betas, list)
         or len(betas) != 2
         or any(type(value) not in (int, float) for value in betas)
-        or not all(0.0 <= float(value) < 1.0 for value in betas)
+        or not all(
+            math.isfinite(float(value)) and 0.0 <= float(value) < 1.0
+            for value in betas
+        )
     ):
         raise ValueError("optimizer.betas must be two numeric values in [0,1).")
-    if [float(value) for value in betas] != [0.9, 0.999]:
-        raise ValueError("optimizer.betas must equal [0.9, 0.999] for v1.")
 
     scheduler = _section(config, "scheduler")
     _require_keys(scheduler, "scheduler", ("name",))
@@ -307,9 +315,7 @@ def validate_v1_config(
     _integer(training, "training", "epochs", minimum=1)
     _bool(training, "training", "amp")
     _bool(training, "training", "deterministic")
-    validate_every = _integer(training, "training", "validate_every", minimum=1)
-    if validate_every != 1:
-        raise ValueError("training.validate_every must equal 1.")
+    _integer(training, "training", "validate_every", minimum=1)
     _integer(training, "training", "save_every", minimum=1)
     gradient_clip = training.get("gradient_clip_norm")
     if gradient_clip is not None:
@@ -321,8 +327,7 @@ def validate_v1_config(
             strictly_greater=True,
         )
     _nullable_string(training, "training", "resume")
-    if not _bool(training, "training", "fail_on_nonfinite"):
-        raise ValueError("training.fail_on_nonfinite must be true for v1.")
+    _bool(training, "training", "fail_on_nonfinite")
 
     checkpoint = _section(config, "checkpoint")
     _require_keys(
@@ -346,8 +351,7 @@ def validate_v1_config(
         "save_last",
         "save_periodic",
     ):
-        if not _bool(checkpoint, "checkpoint", key):
-            raise ValueError(f"checkpoint.{key} must be true for v1.")
+        _bool(checkpoint, "checkpoint", key)
 
     test = _section(config, "test")
     _require_keys(
@@ -362,8 +366,7 @@ def validate_v1_config(
             "visualization",
         ),
     )
-    if not _bool(test, "test", "auto_run_after_training"):
-        raise ValueError("test.auto_run_after_training must be true for v1.")
+    auto_test = _bool(test, "test", "auto_run_after_training")
     if _string(test, "test", "checkpoint") != "best_psnr":
         raise ValueError("test.checkpoint must equal 'best_psnr'.")
     _nullable_string(test, "test", "run_dir")
@@ -386,8 +389,9 @@ def validate_v1_config(
             "add_labels",
         ),
     )
-    if not _bool(visualization, "test.visualization", "enabled"):
-        raise ValueError("test.visualization.enabled must be true for v1.")
+    visualization_enabled = _bool(
+        visualization, "test.visualization", "enabled"
+    )
     num_samples = _integer(
         visualization, "test.visualization", "num_samples", minimum=1
     )
@@ -402,18 +406,24 @@ def validate_v1_config(
     grid_columns = _integer(
         visualization, "test.visualization", "grid_columns", minimum=1
     )
-    if num_samples != 10 or grid_rows != 10 or grid_columns != 3:
-        raise ValueError("v1 visualization is fixed to 10 samples in a 10x3 grid.")
-    _integer(visualization, "test.visualization", "cell_width", minimum=1)
-    _integer(visualization, "test.visualization", "cell_height", minimum=1)
-    if not _bool(
-        visualization, "test.visualization", "preserve_aspect_ratio"
-    ):
+    if grid_columns != len(visualization["columns"]):
         raise ValueError(
-            "test.visualization.preserve_aspect_ratio must be true for v1."
+            "test.visualization.grid_columns must match the number of columns."
         )
-    if not _bool(visualization, "test.visualization", "add_labels"):
-        raise ValueError("test.visualization.add_labels must be true for v1.")
+    if visualization_enabled and grid_rows < num_samples:
+        raise ValueError(
+            "test.visualization.grid_rows must be >= num_samples when enabled."
+        )
+    _integer(visualization, "test.visualization", "cell_width", minimum=1)
+    cell_height = _integer(
+        visualization, "test.visualization", "cell_height", minimum=1
+    )
+    _bool(visualization, "test.visualization", "preserve_aspect_ratio")
+    add_labels = _bool(visualization, "test.visualization", "add_labels")
+    if visualization_enabled and add_labels and cell_height <= 24:
+        raise ValueError(
+            "test.visualization.cell_height must be > 24 when labels are enabled."
+        )
 
     metrics = _section(config, "metrics")
     _require_keys(
@@ -421,14 +431,10 @@ def validate_v1_config(
         "metrics",
         ("data_range", "crop_border", "ssim_window_size", "ssim_sigma"),
     )
-    if _number(metrics, "metrics", "data_range") != 1.0:
-        raise ValueError("metrics.data_range must equal 1.0.")
-    if _integer(metrics, "metrics", "crop_border") != 0:
-        raise ValueError("metrics.crop_border must equal 0.")
-    if _integer(metrics, "metrics", "ssim_window_size", minimum=1) != 11:
-        raise ValueError("metrics.ssim_window_size must equal 11.")
-    if _number(metrics, "metrics", "ssim_sigma") != 1.5:
-        raise ValueError("metrics.ssim_sigma must equal 1.5.")
+    _number(metrics, "metrics", "data_range", minimum=0.0, strictly_greater=True)
+    _integer(metrics, "metrics", "crop_border")
+    _integer(metrics, "metrics", "ssim_window_size", minimum=1)
+    _number(metrics, "metrics", "ssim_sigma", minimum=0.0, strictly_greater=True)
 
     logging = _section(config, "logging")
     _require_keys(
@@ -449,8 +455,12 @@ def validate_v1_config(
         "save_test_log",
         "save_metrics_history_json",
     ):
-        if not _bool(logging, "logging", key):
-            raise ValueError(f"logging.{key} must be true for v1.")
+        _bool(logging, "logging", key)
+    if auto_test and not checkpoint["save_best_psnr"]:
+        raise ValueError(
+            "test.auto_run_after_training=true requires "
+            "checkpoint.save_best_psnr=true."
+        )
     return copy.deepcopy(config)
 
 
@@ -491,6 +501,17 @@ def resolve_manifest_path(path_value: str) -> Path:
     if path.is_absolute():
         return path.resolve(strict=False)
     return (PROJECT_ROOT / path).resolve(strict=False)
+
+
+def resolve_output_root(
+    path_value: str, *, project_root: Path = PROJECT_ROOT
+) -> Path:
+    """Resolve a YAML-provided experiment output root."""
+
+    path = Path(path_value).expanduser()
+    if path.is_absolute():
+        return path.resolve(strict=False)
+    return (project_root / path).resolve(strict=False)
 
 
 def resolve_project_path(relative_path: str) -> Path:

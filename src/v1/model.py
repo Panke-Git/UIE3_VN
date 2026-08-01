@@ -1,4 +1,4 @@
-"""The verified project-specific NAFNet-small research configuration.
+"""The project-specific configurable NAFNet-small implementation.
 
 NAFNet-small is not an official upstream model name and this module does not
 load pretrained weights. The inherited vendored ``NAFNet.forward`` is used
@@ -19,33 +19,24 @@ NAFNET_SMALL_DEC_BLK_NUMS = (2, 2, 2)
 NAFNET_SMALL_PADDER_SIZE = 8
 
 
-def _validate_fixed_integer(name: str, value: int, expected: int) -> int:
-    if type(value) is not int or value != expected:
-        raise ValueError(
-            f"NAFNet-small has a fixed {name}={expected}; received {value!r}."
-        )
+def _validate_integer(name: str, value: int, *, minimum: int) -> int:
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}.")
     return value
 
 
-def _validate_fixed_blocks(
-    name: str, value: Iterable[int], expected: Tuple[int, ...]
-) -> Tuple[int, ...]:
+def _validate_blocks(name: str, value: Iterable[int]) -> Tuple[int, ...]:
     try:
         blocks = tuple(value)
     except TypeError as exc:
-        raise ValueError(
-            f"NAFNet-small has fixed {name}={list(expected)}; received "
-            f"non-iterable {value!r}."
-        ) from exc
-    if any(type(block) is not int for block in blocks) or blocks != expected:
-        raise ValueError(
-            f"NAFNet-small has fixed {name}={list(expected)}; received {value!r}."
-        )
+        raise ValueError(f"{name} must be a non-empty integer sequence.") from exc
+    if not blocks or any(type(block) is not int or block < 0 for block in blocks):
+        raise ValueError(f"{name} values must be integers >= 0, got {value!r}.")
     return blocks
 
 
 class NAFNetSmall(NAFNet):
-    """Ordinary vendored NAFNet fixed to the UIE3 three-scale configuration."""
+    """Ordinary vendored NAFNet with the verified small setup as defaults."""
 
     def __init__(
         self,
@@ -55,19 +46,19 @@ class NAFNetSmall(NAFNet):
         middle_blk_num: int = NAFNET_SMALL_MIDDLE_BLK_NUM,
         dec_blk_nums: Iterable[int] = NAFNET_SMALL_DEC_BLK_NUMS,
     ) -> None:
-        img_channel = _validate_fixed_integer(
-            "img_channel", img_channel, NAFNET_SMALL_IMG_CHANNEL
+        img_channel = _validate_integer("img_channel", img_channel, minimum=1)
+        if img_channel != 3:
+            raise ValueError("NAFNet-small requires img_channel=3 for RGB data.")
+        width = _validate_integer("width", width, minimum=1)
+        enc_blocks = _validate_blocks("enc_blk_nums", enc_blk_nums)
+        middle_blk_num = _validate_integer(
+            "middle_blk_num", middle_blk_num, minimum=0
         )
-        width = _validate_fixed_integer("width", width, NAFNET_SMALL_WIDTH)
-        enc_blocks = _validate_fixed_blocks(
-            "enc_blk_nums", enc_blk_nums, NAFNET_SMALL_ENC_BLK_NUMS
-        )
-        middle_blk_num = _validate_fixed_integer(
-            "middle_blk_num", middle_blk_num, NAFNET_SMALL_MIDDLE_BLK_NUM
-        )
-        dec_blocks = _validate_fixed_blocks(
-            "dec_blk_nums", dec_blk_nums, NAFNET_SMALL_DEC_BLK_NUMS
-        )
+        dec_blocks = _validate_blocks("dec_blk_nums", dec_blk_nums)
+        if len(enc_blocks) != len(dec_blocks):
+            raise ValueError(
+                "enc_blk_nums and dec_blk_nums must have equal lengths."
+            )
         super().__init__(
             img_channel=img_channel,
             width=width,
@@ -75,10 +66,11 @@ class NAFNetSmall(NAFNet):
             middle_blk_num=middle_blk_num,
             dec_blk_nums=list(dec_blocks),
         )
-        if self.padder_size != NAFNET_SMALL_PADDER_SIZE:
+        expected_padder_size = 2 ** len(enc_blocks)
+        if self.padder_size != expected_padder_size:
             raise RuntimeError(
-                "NAFNet-small must use three encoder scales and pad to a "
-                f"multiple of {NAFNET_SMALL_PADDER_SIZE}; got {self.padder_size}."
+                "NAFNet-small padder size does not match its encoder depth: "
+                f"expected {expected_padder_size}, got {self.padder_size}."
             )
 
 
@@ -91,7 +83,7 @@ def build_nafnet_small(
     middle_blk_num: int = NAFNET_SMALL_MIDDLE_BLK_NUM,
     dec_blk_nums: Iterable[int] = NAFNET_SMALL_DEC_BLK_NUMS,
 ) -> NAFNetSmall:
-    """Build the fixed v1 NAFNet-small without loading any weights."""
+    """Build a v1 NAFNet-small from YAML-controlled architecture values."""
 
     if type != "nafnet_small":
         raise ValueError(f"v1 model type must be 'nafnet_small', got {type!r}.")

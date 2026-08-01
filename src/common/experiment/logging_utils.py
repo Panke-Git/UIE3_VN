@@ -71,6 +71,7 @@ def build_logger(
     path: Path | str,
     *,
     console: bool,
+    file_enabled: bool = True,
 ) -> logging.Logger:
     """Create one non-propagating UTF-8 logger for an experiment stage."""
 
@@ -85,11 +86,14 @@ def build_logger(
     formatter = logging.Formatter(
         "%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"
     )
-    file_handler = logging.FileHandler(destination, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    if file_enabled:
+        file_handler = logging.FileHandler(destination, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     if console:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         logger.addHandler(stream_handler)
+    if not logger.handlers:
+        logger.addHandler(logging.NullHandler())
     return logger

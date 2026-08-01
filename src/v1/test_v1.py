@@ -78,10 +78,10 @@ def ensure_test_outputs_available(result_dir: Path, *, allow_overwrite: bool) ->
         result_dir / "test_metrics.csv",
         result_dir / "test_summary.json",
         result_dir / "test_visualization_samples.json",
-        result_dir / "test_grid_10x3.png",
     )
     sample_dir = result_dir / "test_samples"
     occupied = [path for path in candidates if path.exists()]
+    occupied.extend(sorted(result_dir.glob("test_grid_*x*.png")))
     if sample_dir.exists() and any(sample_dir.iterdir()):
         occupied.append(sample_dir)
     if occupied and not allow_overwrite:
@@ -306,6 +306,7 @@ def run_standalone(config_path: Path = V1_CONFIG_PATH) -> Dict[str, Any]:
         f"uie3_v1_test_{run_dir.name}",
         run_dir / "log/test.log",
         console=bool(saved_config["logging"]["console"]),
+        file_enabled=bool(saved_config["logging"]["save_test_log"]),
     )
     status_path = run_dir / "status.json"
     try:

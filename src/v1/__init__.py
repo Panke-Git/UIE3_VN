@@ -1,1 +1,1 @@
-"""Version 1: the fixed NAFNet-small baseline."""
+"""Version 1: configurable experiments with NAFNet-small defaults."""

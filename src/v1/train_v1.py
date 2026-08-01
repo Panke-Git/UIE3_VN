@@ -53,6 +53,12 @@ VALIDATION_FIELDS = (
 )
 
 
+def _validation_due(epoch: int, total_epochs: int, validate_every: int) -> bool:
+    """Validate on the configured cadence and always on the final epoch."""
+
+    return (epoch + 1) % validate_every == 0 or epoch == total_epochs - 1
+
+
 def _initial_run_info(
     config: Mapping[str, Any], paths: RunPaths, config_path: Path
 ) -> Dict[str, Any]:
@@ -121,7 +127,11 @@ def _require_resume_config_match(
 
 
 def _copy_resume_history(
-    resume_path: Path, paths: RunPaths, *, through_epoch: int
+    resume_path: Path,
+    paths: RunPaths,
+    *,
+    through_epoch: int,
+    save_metrics_history: bool,
 ) -> list[dict[str, Any]]:
     """Carry forward history and independent best files into the unique new run."""
 
@@ -149,7 +159,8 @@ def _copy_resume_history(
             raise ValueError(
                 "Resume history does not contain the checkpoint's completed epoch."
             )
-        atomic_write_json(paths.log / "metrics_history.json", history)
+        if save_metrics_history:
+            atomic_write_json(paths.log / "metrics_history.json", history)
     source_best = source_run / "best"
     if source_best.is_dir():
         for stem in ("best_psnr", "best_ssim", "best_loss"):
@@ -301,11 +312,13 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
         f"uie3_v1_train_{paths.root.name}",
         paths.log / "train.log",
         console=bool(config["logging"]["console"]),
+        file_enabled=bool(config["logging"]["save_train_log"]),
     )
     val_logger = build_logger(
         f"uie3_v1_val_{paths.root.name}",
         paths.log / "val.log",
         console=bool(config["logging"]["console"]),
+        file_enabled=bool(config["logging"]["save_validation_log"]),
     )
     progress: MutableMapping[str, Any] = {
         "epoch": 0,
@@ -392,7 +405,12 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
             trainer.global_step = int(checkpoint["global_step"])
             tracker = tracker_from_checkpoint(checkpoint)
             history = _copy_resume_history(
-                resume_path, paths, through_epoch=start_epoch - 1
+                resume_path,
+                paths,
+                through_epoch=start_epoch - 1,
+                save_metrics_history=bool(
+                    config["logging"]["save_metrics_history_json"]
+                ),
             )
             _ensure_resumed_best_files(
                 paths=paths,
@@ -406,6 +424,10 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 trainer.global_step,
             )
         total_epochs = int(config["training"]["epochs"])
+        validate_every = int(config["training"]["validate_every"])
+        save_metrics_history = bool(
+            config["logging"]["save_metrics_history_json"]
+        )
         if start_epoch >= total_epochs:
             raise ValueError(
                 f"Resume checkpoint epoch {start_epoch - 1} already reaches "
@@ -421,6 +443,56 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 loaders["train"].generator.manual_seed(seed + epoch)
             train_result = trainer.train_epoch(loaders["train"])
             progress["global_step"] = trainer.global_step
+            validation_due = _validation_due(
+                epoch, total_epochs, validate_every
+            )
+            if not validation_due:
+                learning_rate = float(optimizer.param_groups[0]["lr"])
+                history.append(
+                    {
+                        "epoch": epoch,
+                        "global_step": trainer.global_step,
+                        "train_loss": train_result["train_loss"],
+                        "val_loss": None,
+                        "psnr": None,
+                        "ssim": None,
+                        "learning_rate": learning_rate,
+                        "epoch_time_seconds": time.monotonic() - epoch_started,
+                        "amp_scale": train_result["amp_scale"],
+                        "optimizer_applied_steps": train_result[
+                            "optimizer_applied_steps"
+                        ],
+                        "skipped_amp_overflow_steps": train_result[
+                            "skipped_amp_overflow_steps"
+                        ],
+                    }
+                )
+                if save_metrics_history:
+                    atomic_write_json(
+                        paths.log / "metrics_history.json", history
+                    )
+                train_logger.info(
+                    "epoch=%d global_step=%d train_loss=%.8f validation=skipped "
+                    "optimizer_applied_steps=%d skipped_amp_overflow_steps=%d",
+                    epoch,
+                    trainer.global_step,
+                    train_result["train_loss"],
+                    train_result["optimizer_applied_steps"],
+                    train_result["skipped_amp_overflow_steps"],
+                )
+                trainer.step_scheduler()
+                atomic_write_json(
+                    paths.root / "status.json",
+                    {
+                        "overall": "RUNNING",
+                        "training": "RUNNING",
+                        "validation": "PENDING",
+                        "test": "PENDING",
+                        "epoch": epoch,
+                        "global_step": trainer.global_step,
+                    },
+                )
+                continue
             progress["validation"] = "RUNNING"
             progress["stage"] = "validation"
             try:
@@ -454,7 +526,8 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 ],
             }
             history.append(epoch_record)
-            atomic_write_json(paths.log / "metrics_history.json", history)
+            if save_metrics_history:
+                atomic_write_json(paths.log / "metrics_history.json", history)
             atomic_write_csv(
                 paths.result / "validation_metrics.csv",
                 validation["per_image"],
@@ -543,6 +616,7 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
             f"uie3_v1_auto_test_{paths.root.name}",
             paths.log / "test.log",
             console=bool(config["logging"]["console"]),
+            file_enabled=bool(config["logging"]["save_test_log"]),
         )
         try:
             return execute_test(

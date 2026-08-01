@@ -6,6 +6,7 @@ import pytest
 
 from src.common.experiment.experiment import run_training_and_auto_test
 from src.v1.test_v1 import ensure_test_outputs_available
+from src.v1.train_v1 import _validation_due
 
 
 def _run(tmp_path, training, testing, progress=None):
@@ -67,3 +68,11 @@ def test_existing_test_output_is_rejected_without_overwrite(tmp_path) -> None:
     with pytest.raises(FileExistsError, match="allow_overwrite=false"):
         ensure_test_outputs_available(result, allow_overwrite=False)
     ensure_test_outputs_available(result, allow_overwrite=True)
+
+
+def test_validation_cadence_always_includes_final_epoch() -> None:
+    assert [
+        epoch
+        for epoch in range(5)
+        if _validation_due(epoch, total_epochs=5, validate_every=2)
+    ] == [1, 3, 4]

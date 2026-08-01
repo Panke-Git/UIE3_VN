@@ -29,13 +29,26 @@ def _validate_metric_inputs(
         raise TypeError("RGB metrics require floating-point tensors.")
     if not torch.isfinite(prediction).all() or not torch.isfinite(target).all():
         raise ValueError("RGB metric inputs must contain only finite values.")
-    if float(data_range) != 1.0:
-        raise ValueError(f"v1 fixes data_range=1.0, got {data_range!r}.")
-    if crop_border != 0:
-        raise ValueError(f"v1 fixes crop_border=0, got {crop_border!r}.")
-    if torch.any(target < 0.0) or torch.any(target > 1.0):
-        raise ValueError("Metric target must already lie in [0,1].")
-    return prediction.clamp(0.0, 1.0), target
+    data_range = float(data_range)
+    if not math.isfinite(data_range) or data_range <= 0.0:
+        raise ValueError(f"data_range must be finite and > 0, got {data_range!r}.")
+    if type(crop_border) is not int or crop_border < 0:
+        raise ValueError(
+            f"crop_border must be an integer >= 0, got {crop_border!r}."
+        )
+    height, width = prediction.shape[-2:]
+    if crop_border * 2 >= height or crop_border * 2 >= width:
+        raise ValueError(
+            f"crop_border={crop_border} leaves no image area for {height}x{width}."
+        )
+    if torch.any(target < 0.0) or torch.any(target > data_range):
+        raise ValueError(f"Metric target must lie in [0,{data_range}].")
+    prediction = prediction.clamp(0.0, data_range)
+    if crop_border:
+        border = crop_border
+        prediction = prediction[:, :, border:-border, border:-border]
+        target = target[:, :, border:-border, border:-border]
+    return prediction, target
 
 
 def rgb_psnr_per_image(
@@ -98,10 +111,13 @@ def rgb_ssim_per_image(
     prediction, target = _validate_metric_inputs(
         prediction, target, data_range=data_range, crop_border=crop_border
     )
-    if window_size != 11:
-        raise ValueError(f"v1 fixes SSIM window_size=11, got {window_size}.")
-    if not math.isclose(float(sigma), 1.5, rel_tol=0.0, abs_tol=0.0):
-        raise ValueError(f"v1 fixes SSIM sigma=1.5, got {sigma!r}.")
+    if type(window_size) is not int or window_size < 1:
+        raise ValueError(
+            f"window_size must be an integer >= 1, got {window_size!r}."
+        )
+    sigma = float(sigma)
+    if not math.isfinite(sigma) or sigma <= 0.0:
+        raise ValueError(f"sigma must be finite and > 0, got {sigma!r}.")
     height, width = prediction.shape[-2:]
     if height < window_size or width < window_size:
         raise ValueError(

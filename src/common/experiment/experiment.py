@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, MutableMapping, Optional
 
-from .config import PROJECT_ROOT
+from .config import PROJECT_ROOT, resolve_output_root
 from .logging_utils import atomic_write_json
 
 
@@ -38,8 +38,8 @@ def create_experiment(config: Mapping[str, Any], *, now: datetime | None = None)
 
     moment = now or datetime.now()
     timestamp = moment.strftime("%Y%m%d_%H%M%S")
-    output_root = (PROJECT_ROOT / config["experiment"]["output_root"]).resolve(
-        strict=False
+    output_root = resolve_output_root(
+        config["experiment"]["output_root"], project_root=PROJECT_ROOT
     )
     output_root.mkdir(parents=True, exist_ok=True)
     base_name = (

@@ -50,6 +50,12 @@ def test_yaml_parses_and_has_matching_v1_seed() -> None:
     assert config["experiment"]["seed"] == 1234
 
 
+def test_checked_in_smoke_config_loads() -> None:
+    config = load_v1_config(PROJECT_ROOT / "configs/configV1_smoke.yaml")
+    assert config["training"]["epochs"] == 2
+    assert config["data"]["batch_size"] == 8
+
+
 def test_default_config_is_the_train_and_test_cli_default() -> None:
     assert train_v1.build_parser().parse_args([]).config == V1_CONFIG_PATH
     assert test_v1.build_parser().parse_args([]).config == V1_CONFIG_PATH
@@ -149,11 +155,88 @@ def test_other_version_like_fields_are_checked() -> None:
         validate_v1_config(config, entry_point="train_v1")
 
 
-def test_name_seed_mismatch_is_rejected() -> None:
+def test_experiment_name_does_not_lock_the_seed() -> None:
     config = load_v1_config(V1_CONFIG_PATH)
     config["experiment"]["seed"] = 2027
-    with pytest.raises(ValueError, match="matching experiment.seed"):
-        validate_v1_config(config)
+    assert validate_v1_config(config)["experiment"]["seed"] == 2027
+
+
+def test_supported_tunable_values_are_yaml_controlled(tmp_path: Path) -> None:
+    config = load_v1_config(V1_CONFIG_PATH)
+    config["experiment"]["output_root"] = str(tmp_path / "runs")
+    config["data"].update(
+        {
+            "patch_size": 128,
+            "batch_size": 16,
+            "num_workers": 2,
+            "pin_memory": False,
+            "pad_if_smaller": False,
+        }
+    )
+    config["data"]["augmentation"] = {
+        "hflip": False,
+        "vflip": False,
+        "rot90": False,
+    }
+    config["model"].update(
+        {
+            "width": 16,
+            "enc_blk_nums": [1, 1],
+            "middle_blk_num": 2,
+            "dec_blk_nums": [1, 1],
+        }
+    )
+    config["loss"]["epsilon"] = 0.01
+    config["optimizer"].update(
+        {
+            "learning_rate": 0.001,
+            "weight_decay": 0.01,
+            "betas": [0.8, 0.95],
+        }
+    )
+    config["training"].update(
+        {
+            "epochs": 3,
+            "amp": False,
+            "deterministic": True,
+            "validate_every": 2,
+            "save_every": 5,
+            "gradient_clip_norm": 1.0,
+            "fail_on_nonfinite": False,
+        }
+    )
+    config["checkpoint"].update(
+        {
+            "save_best_ssim": False,
+            "save_best_val_loss": False,
+            "save_last": False,
+            "save_periodic": False,
+        }
+    )
+    config["test"]["auto_run_after_training"] = False
+    config["test"]["visualization"].update(
+        {
+            "num_samples": 4,
+            "grid_rows": 4,
+            "cell_width": 320,
+            "cell_height": 240,
+            "preserve_aspect_ratio": False,
+            "add_labels": False,
+        }
+    )
+    config["metrics"].update(
+        {
+            "data_range": 2.0,
+            "crop_border": 1,
+            "ssim_window_size": 7,
+            "ssim_sigma": 1.0,
+        }
+    )
+    config["logging"] = {key: False for key in config["logging"]}
+
+    validated = validate_v1_config(config)
+
+    assert validated == config
 
 
 @pytest.mark.parametrize(
@@ -164,8 +247,8 @@ def test_name_seed_mismatch_is_rejected() -> None:
         ("loss", "epsilon", 0.0),
         ("optimizer", "learning_rate", -0.1),
         ("training", "epochs", 0),
-        ("training", "validate_every", 2),
-        ("metrics", "data_range", 255.0),
+        ("training", "validate_every", 0),
+        ("metrics", "data_range", 0.0),
     ],
 )
 def test_invalid_ranges_or_fixed_semantics_are_rejected(

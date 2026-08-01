@@ -28,7 +28,7 @@ The final source-repository status audit is recorded under “Checks”.
 | Read-only source | Target | Migration treatment |
 |---|---|---|
 | `UIE3/configs/nafnet_small_lsui_formal_seed1234.yaml` | `configs/configV1.yaml` | Preserved baseline values; added independent run, test, visualization, status, and logging fields. |
-| `UIE3/src/models/backbones/nafnet_small.py` | `src/v1/model.py` | Preserved fixed wrapper and inherited ordinary NAFNet forward. |
+| `UIE3/src/models/backbones/nafnet_small.py` | `src/v1/model.py` | Preserved the verified small defaults and inherited ordinary NAFNet forward; architecture dimensions are YAML-configurable. |
 | `UIE3/third_party/nafnet/nafnet_arch.py` | `third_party/nafnet/nafnet_arch.py` | Migrated implementation with source header retained; normalized one trailing-whitespace line and one extra EOF blank line so Git whitespace checks pass. No token or computation changed. |
 | `UIE3/third_party/nafnet/LICENSE` | `third_party/nafnet/LICENSE` | Exact composite MIT/Apache-2.0 license copy. |
 | `UIE3/third_party/nafnet/UPSTREAM.md` | `third_party/nafnet/UPSTREAM.md` | Preserved provenance and appended the independent-project migration note. |
@@ -131,7 +131,7 @@ A test failure leaves training complete and marks the run
 Candidates are sorted by sample ID and sampled only with
 `random.Random(3407)`. No quality metric enters selection. Ten distinct IDs
 are used, or all IDs once when fewer than ten exist. Selected enhanced RGB
-PNGs, selection provenance JSON, and a fixed ten-row by three-column grid are
+PNGs, selection provenance JSON, and a default ten-row by three-column grid are
 saved under `result/`. Columns are Input, Enhanced, and GT. Each 512×512 cell
 uses aspect-preserving resize, uniform padding, and Pillow's default font.
 Only the visualization copies are resized.

@@ -28,6 +28,24 @@ def test_prediction_is_clamped_only_for_metrics() -> None:
     assert torch.equal(prediction, original)
 
 
+def test_metric_parameters_are_configurable() -> None:
+    target = torch.zeros(1, 3, 20, 21)
+    prediction = torch.full_like(target, 0.25)
+    psnr = rgb_psnr_per_image(
+        prediction, target, data_range=2.0, crop_border=2
+    )
+    ssim = rgb_ssim_per_image(
+        prediction,
+        target,
+        data_range=2.0,
+        crop_border=2,
+        window_size=7,
+        sigma=1.0,
+    )
+    assert torch.isfinite(psnr).all()
+    assert torch.isfinite(ssim).all()
+
+
 @pytest.mark.parametrize(
     "prediction,target",
     [

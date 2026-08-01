@@ -11,7 +11,7 @@ weights are loaded.
 
 ## v1 semantics
 
-The fixed model configuration is:
+The default NAFNet-small configuration is:
 
 ```yaml
 img_channel: 3
@@ -43,7 +43,7 @@ experiments/                ignored run output root
 
 ## Configure and train
 
-Before each new seed run, edit these two matching values in
+Before each new seed run, edit these values in
 `configs/configV1.yaml`:
 
 ```yaml
@@ -52,9 +52,10 @@ experiment:
   seed: 1234
 ```
 
-The `seed<number>` token in the name must equal `experiment.seed`; mismatches
-are rejected. The dataset path and the single v1 protocol are also stored in
-that YAML.
+The experiment name is used in the run-directory name, while the numeric seed
+is read independently from `experiment.seed`. Dataset paths, model dimensions,
+training hyperparameters, checkpoint switches, metrics, and visualization
+settings are all read from YAML.
 
 Start training from the repository root:
 
@@ -71,6 +72,19 @@ identify v1:
 python -m src.v1.train_v1 --config /tmp/UIE3_VN_v1_smoke/configV1_smoke.yaml
 ```
 
+The repository also includes a two-epoch check configuration with batch size
+8. It uses the same LSUI19 paths and produces the same classes of experiment
+artifacts as the default run:
+
+```bash
+python -m src.v1.train_v1 --config configs/configV1_smoke.yaml
+```
+
+On a 24 GB GPU, `batch_size: 8` is a conservative first increase for the
+default 256×256, width-32 model. Try 16 afterward if memory monitoring shows
+enough headroom; reduce it if CUDA reports out of memory. The code only
+requires a positive batch size and does not impose an artificial upper bound.
+
 A tmux session is optional and remains under user control:
 
 ```bash
@@ -78,12 +92,13 @@ tmux new -s v1_seed1234
 sh src/v1/run.sh
 ```
 
-Every epoch automatically runs the complete validation manifest without
-random crop or augmentation. Validation PSNR, SSIM, and validation loss update
-three independent best checkpoints. The formal primary checkpoint is always
+Validation runs according to `training.validate_every` and always runs on the
+final epoch, without random crop or augmentation. Validation PSNR, SSIM, and
+validation loss update three independent best checkpoints when their save
+switches are enabled. The default primary checkpoint is
 `best/best_psnr.pt`.
 
-Only after all 200 epochs complete successfully, training automatically runs
+After all configured epochs complete successfully, training optionally runs
 the complete test manifest exactly once with `best/best_psnr.pt`. Test results
 cannot update checkpoints, change training length, or select hyperparameters.
 
@@ -110,11 +125,11 @@ result/test_samples/{sample_id}_enhanced.png
 result/test_grid_10x3.png
 ```
 
-The grid is ten rows by three columns in `Input / Enhanced / GT` order. Each
-cell is 512×512, aspect ratio is preserved with uniform padding, and the
-default Pillow font labels the sample and column. If fewer than ten test
-samples exist, all are used once and unused grid rows remain blank. Resizing
-is visualization-only and never feeds PSNR or SSIM.
+By default, the grid is ten rows by three columns in
+`Input / Enhanced / GT` order. The row count, requested sample count, cell
+size, aspect-ratio behavior, and labels are YAML-controlled; the output name
+follows `test_grid_{rows}x3.png`. Resizing is visualization-only and never
+feeds PSNR or SSIM.
 
 ## Standalone test
 
@@ -170,7 +185,7 @@ git diff --check
 ```
 
 The test suite covers config validation, unique run creation, independent
-best selection, fixed metrics, model shapes/padding/residual behavior,
+best selection, configurable metrics, model shapes/padding/residual behavior,
 checkpoint save/load/resume, reproducible visualization, and automatic test
 lifecycle behavior.
 

@@ -53,3 +53,18 @@ def test_wrapper_does_not_add_a_second_global_residual() -> None:
     with torch.no_grad():
         output = model(value)
     torch.testing.assert_close(output, value, rtol=0.0, atol=0.0)
+
+
+def test_yaml_model_dimensions_are_configurable() -> None:
+    model = build_nafnet_small(
+        width=8,
+        enc_blk_nums=[1, 1],
+        middle_blk_num=1,
+        dec_blk_nums=[1, 1],
+    ).cpu().eval()
+    value = torch.randn(1, 3, 17, 19)
+    with torch.no_grad():
+        output = model(value)
+    assert model.padder_size == 4
+    assert output.shape == value.shape
+    assert torch.isfinite(output).all()

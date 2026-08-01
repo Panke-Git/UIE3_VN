@@ -1,4 +1,4 @@
-"""Reproducible random test sampling and fixed 10-row by 3-column grids."""
+"""Reproducible random test sampling and YAML-sized comparison grids."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def build_visualization_grid(
     visualization_config: Mapping[str, Any],
     destination: Path,
 ) -> Path:
-    """Create a fixed-size 10x3 RGB canvas without modifying source images."""
+    """Create a configured RGB canvas without modifying source images."""
 
     rows = int(visualization_config["grid_rows"])
     columns = list(visualization_config["columns"])
@@ -106,7 +106,7 @@ def save_test_visualization(
     visualization_config: Mapping[str, Any],
     result_dir: Path,
 ) -> Dict[str, Any]:
-    """Save selected enhanced images, selection provenance, and the 10x3 grid."""
+    """Save selected enhanced images, selection provenance, and the grid."""
 
     samples_dir = result_dir / "test_samples"
     samples_dir.mkdir(parents=True, exist_ok=True)
@@ -140,9 +140,13 @@ def save_test_visualization(
         "samples": json_samples,
     }
     atomic_write_json(result_dir / "test_visualization_samples.json", payload)
+    grid_filename = (
+        f"test_grid_{int(visualization_config['grid_rows'])}x"
+        f"{int(visualization_config['grid_columns'])}.png"
+    )
     build_visualization_grid(
         grid_samples,
         visualization_config,
-        result_dir / "test_grid_10x3.png",
+        result_dir / grid_filename,
     )
     return payload
