@@ -463,7 +463,7 @@ def validate_v1_config(
         "save_metrics_history_json",
     ):
         _bool(logging, "logging", key)
-    _integer(logging, "logging", "log_every_steps", minimum=1)
+    _integer(logging, "logging", "log_every_steps", minimum=0)
     if auto_test and not checkpoint["save_best_psnr"]:
         raise ValueError(
             "test.auto_run_after_training=true requires "

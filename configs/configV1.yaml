@@ -10,7 +10,7 @@ data:
   validation_manifest: splits/lsui19/validation.tsv
   test_manifest: splits/lsui19/test.tsv
   patch_size: 256
-  batch_size: 4
+  batch_size: 16
   num_workers: 4
   pin_memory: true
   pad_if_smaller: true
@@ -93,4 +93,5 @@ logging:
   save_validation_log: true
   save_test_log: true
   save_metrics_history_json: true
-  log_every_steps: 10
+  # 0 disables per-batch logs; epoch summaries are still always logged.
+  log_every_steps: 0

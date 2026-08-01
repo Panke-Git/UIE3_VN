@@ -87,6 +87,13 @@ def test_progress_logging_includes_first_interval_and_last_batch() -> None:
     ] == [1, 10, 20, 23]
 
 
+def test_zero_progress_interval_disables_batch_logging() -> None:
+    assert not any(
+        _progress_log_due(batch, total_batches=23, log_every_steps=0)
+        for batch in range(1, 24)
+    )
+
+
 def test_saved_test_image_is_resized_to_configured_square() -> None:
     source = Image.new("RGB", (19, 31), (10, 20, 30))
     resized = _resize_output_image(source, 256)

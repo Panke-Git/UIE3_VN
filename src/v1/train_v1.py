@@ -62,7 +62,10 @@ def _validation_due(epoch: int, total_epochs: int, validate_every: int) -> bool:
 def _progress_log_due(
     batch_index: int, total_batches: Optional[int], log_every_steps: int
 ) -> bool:
-    """Log the first batch, configured intervals, and the final batch."""
+    """Log batch progress when a positive interval is configured."""
+
+    if log_every_steps <= 0:
+        return False
 
     return (
         batch_index == 1
@@ -476,14 +479,28 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                     )
 
             train_result = trainer.train_epoch(
-                loaders["train"], progress_callback=log_train_progress
+                loaders["train"],
+                progress_callback=(
+                    log_train_progress if log_every_steps > 0 else None
+                ),
             )
             progress["global_step"] = trainer.global_step
+            learning_rate = float(optimizer.param_groups[0]["lr"])
+            train_logger.info(
+                "epoch=%d/%d train_loss=%.8f global_step=%d lr=%.8g "
+                "optimizer_applied_steps=%d skipped_amp_overflow_steps=%d",
+                epoch + 1,
+                total_epochs,
+                train_result["train_loss"],
+                trainer.global_step,
+                learning_rate,
+                train_result["optimizer_applied_steps"],
+                train_result["skipped_amp_overflow_steps"],
+            )
             validation_due = _validation_due(
                 epoch, total_epochs, validate_every
             )
             if not validation_due:
-                learning_rate = float(optimizer.param_groups[0]["lr"])
                 history.append(
                     {
                         "epoch": epoch,
@@ -507,17 +524,6 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                     atomic_write_json(
                         paths.log / "metrics_history.json", history
                     )
-                train_logger.info(
-                    "epoch=%d/%d global_step=%d train_loss=%.8f "
-                    "validation=skipped "
-                    "optimizer_applied_steps=%d skipped_amp_overflow_steps=%d",
-                    epoch + 1,
-                    total_epochs,
-                    trainer.global_step,
-                    train_result["train_loss"],
-                    train_result["optimizer_applied_steps"],
-                    train_result["skipped_amp_overflow_steps"],
-                )
                 trainer.step_scheduler()
                 atomic_write_json(
                     paths.root / "status.json",
@@ -558,7 +564,11 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
             try:
                 validation = trainer.validate(
                     loaders["validation"],
-                    progress_callback=log_validation_progress,
+                    progress_callback=(
+                        log_validation_progress
+                        if log_every_steps > 0
+                        else None
+                    ),
                 )
             except Exception:
                 val_logger.exception(
@@ -574,7 +584,6 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 val_loss=validation["val_loss"],
                 source="validation",
             )
-            learning_rate = float(optimizer.param_groups[0]["lr"])
             epoch_record = {
                 "epoch": epoch,
                 "global_step": trainer.global_step,
@@ -621,16 +630,6 @@ def run(config_path: Path = V1_CONFIG_PATH) -> Path:
                 validation["val_loss"],
                 validation["psnr_rgb"],
                 validation["ssim_rgb"],
-            )
-            train_logger.info(
-                "epoch=%d/%d global_step=%d train_loss=%.8f "
-                "optimizer_applied_steps=%d skipped_amp_overflow_steps=%d",
-                epoch + 1,
-                total_epochs,
-                trainer.global_step,
-                train_result["train_loss"],
-                train_result["optimizer_applied_steps"],
-                train_result["skipped_amp_overflow_steps"],
             )
             payload = build_checkpoint_payload(
                 model=model,

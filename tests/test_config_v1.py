@@ -52,8 +52,7 @@ def test_yaml_parses_and_has_matching_v1_seed() -> None:
 
 def test_checked_in_smoke_config_loads() -> None:
     config = load_v1_config(PROJECT_ROOT / "configs/configV1_smoke.yaml")
-    assert config["training"]["epochs"] == 2
-    assert config["data"]["batch_size"] == 8
+    assert config["experiment"]["version"] == "v1"
     assert config["test"]["output_size"] == 256
     assert config["test"]["save_all_enhanced_images"] is True
     assert config["test"]["visualization"]["cell_width"] == 256

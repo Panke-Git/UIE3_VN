@@ -91,8 +91,12 @@ upper bound, but a larger batch changes optimization behavior and is not
 automatically better.
 
 With `logging.console: true`, train and validation progress is printed to the
-terminal. `logging.log_every_steps` controls the batch interval; the first and
-last batch are always printed.
+terminal. Every epoch writes one training summary, and every validation run
+writes one validation summary. Set `logging.log_every_steps: 0` to disable
+per-batch messages (the checked-in v1 configs use this setting). A positive
+value enables batch progress at that interval, including the first and final
+batch. With `training.validate_every: 1`, both `train.log` and `val.log` receive
+one metric summary per epoch.
 
 A tmux session is optional and remains under user control:
 
