@@ -1,21 +1,110 @@
 from __future__ import annotations
 
 import copy
+import os
+import shutil
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Callable, Iterator
 
 import pytest
 
 from src.common.experiment.config import (
+    PROJECT_ROOT,
     V1_CONFIG_PATH,
     load_v1_config,
     validate_v1_config,
 )
+from src.v1 import test_v1, train_v1
+
+
+@contextmanager
+def _temporary_v1_config(
+    directory: Path, *, filename: str | None = None, version: str = "v1"
+) -> Iterator[Path]:
+    directory.mkdir(parents=True, exist_ok=True)
+    if filename is None:
+        descriptor, raw_path = tempfile.mkstemp(
+            prefix="configV1_custom_", suffix=".yaml", dir=directory
+        )
+        os.close(descriptor)
+        path = Path(raw_path)
+    else:
+        path = directory / filename
+    contents = V1_CONFIG_PATH.read_text(encoding="utf-8")
+    if version != "v1":
+        contents = contents.replace("version: v1", f"version: {version}", 1)
+    path.write_text(contents, encoding="utf-8")
+    try:
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def test_yaml_parses_and_has_matching_v1_seed() -> None:
-    config = load_v1_config(V1_CONFIG_PATH)
+    config = load_v1_config()
     assert config["experiment"]["version"] == "v1"
     assert config["experiment"]["name"] == "NAFNet_small_seed1234"
     assert config["experiment"]["seed"] == 1234
+
+
+def test_default_config_is_the_train_and_test_cli_default() -> None:
+    assert train_v1.build_parser().parse_args([]).config == V1_CONFIG_PATH
+    assert test_v1.build_parser().parse_args([]).config == V1_CONFIG_PATH
+
+
+def test_repository_custom_v1_config_can_load() -> None:
+    with _temporary_v1_config(PROJECT_ROOT / "configs") as config_path:
+        config_path.resolve().relative_to(PROJECT_ROOT.resolve())
+        config = load_v1_config(config_path, entry_point="train_v1")
+    assert config["experiment"]["version"] == "v1"
+
+
+def test_tmp_smoke_v1_config_can_load() -> None:
+    smoke_dir = Path(tempfile.mkdtemp(prefix="UIE3_VN_v1_smoke_", dir="/tmp"))
+    try:
+        with _temporary_v1_config(
+            smoke_dir, filename="configV1_smoke.yaml"
+        ) as config_path:
+            config = load_v1_config(config_path, entry_point="train_v1")
+    finally:
+        shutil.rmtree(smoke_dir)
+    assert config["experiment"]["version"] == "v1"
+
+
+@pytest.mark.parametrize(
+    ("entry_point", "runner"),
+    [("train_v1", train_v1.run), ("test_v1", test_v1.run_standalone)],
+)
+def test_v2_config_is_rejected_by_v1_entry_points(
+    entry_point: str, runner: Callable[[Path], object]
+) -> None:
+    with _temporary_v1_config(Path("/tmp"), version="v2") as config_path:
+        with pytest.raises(
+            ValueError,
+            match=rf"{entry_point} requires a v1 configuration; got version=v2",
+        ):
+            runner(config_path)
+
+
+@pytest.mark.parametrize("runner", [train_v1.run, test_v1.run_standalone])
+def test_missing_config_is_rejected_by_v1_entry_points(
+    tmp_path: Path, runner: Callable[[Path], object]
+) -> None:
+    missing_path = tmp_path / "does_not_exist.yaml"
+    with pytest.raises(FileNotFoundError, match="Config file does not exist"):
+        runner(missing_path)
+
+
+def test_other_version_like_fields_are_checked() -> None:
+    config = load_v1_config()
+    config["model"]["model_version"] = "v2"
+    with pytest.raises(
+        ValueError,
+        match="train_v1 requires a v1 configuration; got model_version=v2",
+    ):
+        validate_v1_config(config, entry_point="train_v1")
 
 
 def test_name_seed_mismatch_is_rejected() -> None:

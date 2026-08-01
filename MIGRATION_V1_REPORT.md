@@ -96,8 +96,10 @@ zero.
 
 ## Training, checkpoint, and automatic test flow
 
-One `configs/configV1.yaml` controls v1. The name's `seed<number>` token must
-match the numeric seed. Each launch immediately creates a unique,
+`configs/configV1.yaml` is the default v1 configuration; the train and test
+entry points also accept an explicitly selected v1 YAML from any filesystem
+location. The name's `seed<number>` token must match the numeric seed. Each
+launch immediately creates a unique,
 second-precision run directory and atomically snapshots the complete config.
 Python, NumPy, torch, CUDA, workers, runtime metadata, logs, status, and errors
 are recorded.

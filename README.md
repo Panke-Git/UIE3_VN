@@ -32,7 +32,7 @@ enhanced images.
 ## Layout
 
 ```text
-configs/configV1.yaml       the only v1 configuration
+configs/configV1.yaml       the default v1 configuration
 splits/lsui19/              migrated train/validation/test TSV manifests
 src/common/                 data, metrics, run, checkpoint, and grid utilities
 src/v1/                     v1 model, loss, trainer, train/test entry points
@@ -60,6 +60,15 @@ Start training from the repository root:
 
 ```bash
 sh src/v1/run.sh
+```
+
+The Python entry point uses `configs/configV1.yaml` by default. A v1 YAML at
+any other repository or filesystem location can be selected explicitly; its
+`version`, `variant`, `model_version`, or other version-like fields must all
+identify v1:
+
+```bash
+python -m src.v1.train_v1 --config /tmp/UIE3_VN_v1_smoke/configV1_smoke.yaml
 ```
 
 A tmux session is optional and remains under user control:
@@ -122,6 +131,9 @@ Then run:
 ```bash
 sh src/v1/test.sh
 ```
+
+As with training, a different v1 YAML can be selected with
+`python -m src.v1.test_v1 --config /path/to/config.yaml`.
 
 The standalone entry reads the run's own `config.json` for model, data,
 metric, and visualization semantics. It only accepts `best_psnr` and writes

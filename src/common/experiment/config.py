@@ -1,4 +1,4 @@
-"""Load and validate the single v1 YAML without a schema framework."""
+"""Load and validate v1 YAML configurations without a schema framework."""
 
 from __future__ import annotations
 
@@ -24,6 +24,41 @@ FIXED_MANIFESTS = {
     "test_manifest": "splits/lsui19/test.tsv",
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_VERSION_KEYS = {"version", "variant", "model_version"}
+
+
+def _is_version_key(key: Any) -> bool:
+    if not isinstance(key, str):
+        return False
+    normalized = re.sub(r"[^a-z0-9]+", "_", key.casefold()).strip("_")
+    return normalized in _VERSION_KEYS or normalized.endswith("_version")
+
+
+def _declared_versions(config: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    declared: list[tuple[str, Any]] = []
+
+    def visit(value: Mapping[str, Any]) -> None:
+        for key, child in value.items():
+            if _is_version_key(key):
+                declared.append((str(key), child))
+            if isinstance(child, Mapping):
+                visit(child)
+
+    visit(config)
+    return declared
+
+
+def _require_v1_version(config: Mapping[str, Any], entry_point: str) -> None:
+    declared = _declared_versions(config)
+    if not declared:
+        raise ValueError(
+            f"{entry_point} requires a v1 configuration; got no version field."
+        )
+    for key, value in declared:
+        if not isinstance(value, str) or value.strip().casefold() != "v1":
+            raise ValueError(
+                f"{entry_point} requires a v1 configuration; got {key}={value}."
+            )
 
 
 def _section(config: Mapping[str, Any], name: str) -> Mapping[str, Any]:
@@ -110,11 +145,14 @@ def _validate_relative_path(value: str, field: str) -> None:
         raise ValueError(f"{field} must be a project-relative path without '..'.")
 
 
-def validate_v1_config(config: Any) -> Dict[str, Any]:
+def validate_v1_config(
+    config: Any, *, entry_point: str = "v1"
+) -> Dict[str, Any]:
     """Validate all v1 fields and fixed baseline semantics."""
 
     if not isinstance(config, dict):
         raise ValueError("YAML config root must be a mapping.")
+    _require_v1_version(config, entry_point)
     required_sections = (
         "experiment",
         "data",
@@ -417,30 +455,34 @@ def validate_v1_config(config: Any) -> Dict[str, Any]:
     return copy.deepcopy(config)
 
 
-def load_v1_config(path: Path | str) -> Dict[str, Any]:
+def resolve_v1_config_path(path: Path | str = V1_CONFIG_PATH) -> Path:
+    """Resolve an arbitrary v1 config path and require it to be a file."""
+
+    config_path = Path(path).expanduser().resolve(strict=False)
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Config file does not exist: {config_path}")
+    return config_path
+
+
+def load_v1_config(
+    path: Path | str = V1_CONFIG_PATH, *, entry_point: str = "v1"
+) -> Dict[str, Any]:
     """Read one YAML file and return an independent validated dictionary."""
 
+    config_path = resolve_v1_config_path(path)
     try:
         import yaml
     except ImportError as exc:
         raise RuntimeError("PyYAML is required to read the v1 configuration.") from exc
-    config_path = Path(path).expanduser().resolve(strict=False)
-    if not config_path.is_file():
-        raise FileNotFoundError(f"Config file does not exist: {config_path}")
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
-    return validate_v1_config(config)
+    return validate_v1_config(config, entry_point=entry_point)
 
 
 def require_canonical_v1_config(path: Path | str) -> Path:
-    """Enforce the v1 entry points' single source configuration."""
+    """Backward-compatible alias for unrestricted v1 path resolution."""
 
-    resolved = Path(path).expanduser().resolve(strict=False)
-    if resolved != V1_CONFIG_PATH.resolve():
-        raise ValueError(
-            f"v1 entry points only accept {V1_CONFIG_PATH}; got {resolved}."
-        )
-    return resolved
+    return resolve_v1_config_path(path)
 
 
 def resolve_project_path(relative_path: str) -> Path:

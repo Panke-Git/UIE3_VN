@@ -24,8 +24,9 @@ from src.common.experiment.checkpoint import (
 )
 from src.common.experiment.config import (
     PROJECT_ROOT,
+    V1_CONFIG_PATH,
     load_v1_config,
-    require_canonical_v1_config,
+    resolve_v1_config_path,
 )
 from src.common.experiment.experiment import (
     RunPaths,
@@ -289,12 +290,12 @@ def _save_epoch_checkpoints(
         )
 
 
-def run(config_path: Path) -> Path:
-    canonical_path = require_canonical_v1_config(config_path)
-    config = load_v1_config(canonical_path)
+def run(config_path: Path = V1_CONFIG_PATH) -> Path:
+    resolved_config_path = resolve_v1_config_path(config_path)
+    config = load_v1_config(resolved_config_path, entry_point="train_v1")
     paths = create_experiment(config)
     start_monotonic = time.monotonic()
-    run_info = _initial_run_info(config, paths, canonical_path)
+    run_info = _initial_run_info(config, paths, resolved_config_path)
     atomic_write_json(paths.root / "run_info.json", run_info)
     train_logger = build_logger(
         f"uie3_v1_train_{paths.root.name}",
@@ -357,7 +358,7 @@ def run(config_path: Path) -> Path:
         detailed_info = collect_run_info(
             config,
             paths,
-            source_config_path=canonical_path,
+            source_config_path=resolved_config_path,
             model=model,
             torch_module=torch,
             command=sys.argv,
@@ -575,7 +576,12 @@ def run(config_path: Path) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=V1_CONFIG_PATH,
+        help=f"v1 YAML configuration (default: {V1_CONFIG_PATH})",
+    )
     return parser
 
 

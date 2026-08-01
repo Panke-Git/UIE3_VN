@@ -16,8 +16,9 @@ from PIL import Image
 
 from src.common.experiment.config import (
     PROJECT_ROOT,
+    V1_CONFIG_PATH,
     load_v1_config,
-    require_canonical_v1_config,
+    resolve_v1_config_path,
     validate_v1_config,
 )
 from src.common.experiment.experiment import write_error
@@ -282,13 +283,16 @@ def execute_test(
     return summary
 
 
-def run_standalone(config_path: Path) -> Dict[str, Any]:
-    canonical_path = require_canonical_v1_config(config_path)
-    current_config = load_v1_config(canonical_path)
+def run_standalone(config_path: Path = V1_CONFIG_PATH) -> Dict[str, Any]:
+    resolved_config_path = resolve_v1_config_path(config_path)
+    current_config = load_v1_config(
+        resolved_config_path, entry_point="test_v1"
+    )
     run_dir_value = current_config["test"]["run_dir"]
     if run_dir_value is None:
         raise ValueError(
-            "Set test.run_dir in configs/configV1.yaml before standalone test."
+            "Set test.run_dir in the selected v1 configuration before standalone "
+            "test."
         )
     run_dir = _resolve_run_dir(run_dir_value)
     saved_config_path = run_dir / "config.json"
@@ -345,7 +349,12 @@ def run_standalone(config_path: Path) -> Dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=V1_CONFIG_PATH,
+        help=f"v1 YAML configuration (default: {V1_CONFIG_PATH})",
+    )
     return parser
 
 
