@@ -8,7 +8,7 @@ from typing import Any, Dict
 import torch
 from torch.utils.data import DataLoader
 
-from src.common.experiment.config import resolve_project_path
+from src.common.experiment.config import resolve_manifest_path
 from src.common.experiment.seed import seed_worker
 
 from .paired_dataset import PairedImageDataset
@@ -20,7 +20,7 @@ def _dataset(config: Dict[str, Any], split: str) -> PairedImageDataset:
     augmentation = data["augmentation"]
     return PairedImageDataset(
         str(Path(data["root"]).expanduser()),
-        str(resolve_project_path(data[f"{split}_manifest"])),
+        str(resolve_manifest_path(data[f"{split}_manifest"])),
         training=training,
         patch_size=int(data["patch_size"]) if training else None,
         enable_hflip=bool(augmentation["hflip"]) if training else False,

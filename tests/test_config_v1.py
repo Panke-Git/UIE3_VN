@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 import pytest
+import yaml
 
 from src.common.experiment.config import (
     PROJECT_ROOT,
@@ -71,6 +72,47 @@ def test_tmp_smoke_v1_config_can_load() -> None:
     finally:
         shutil.rmtree(smoke_dir)
     assert config["experiment"]["version"] == "v1"
+
+
+def test_custom_manifests_and_two_epochs_can_load(tmp_path: Path) -> None:
+    config = load_v1_config()
+    manifest_paths = {}
+    for split in ("train", "validation", "test"):
+        manifest_path = tmp_path / f"{split}.tsv"
+        manifest_path.write_text(
+            f"{split}_sample\tinput.png\tgt.png\n", encoding="utf-8"
+        )
+        key = f"{split}_manifest"
+        config["data"][key] = str(manifest_path)
+        manifest_paths[key] = str(manifest_path)
+    config["training"]["epochs"] = 2
+    config_path = tmp_path / "configV1_smoke.yaml"
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+    )
+
+    loaded = load_v1_config(config_path, entry_point="train_v1")
+
+    assert loaded["training"]["epochs"] == 2
+    assert {
+        key: loaded["data"][key] for key in manifest_paths
+    } == manifest_paths
+
+
+def test_missing_manifest_is_rejected(tmp_path: Path) -> None:
+    config = load_v1_config()
+    config["data"]["train_manifest"] = str(tmp_path / "missing.tsv")
+    with pytest.raises(FileNotFoundError, match="data.train_manifest"):
+        validate_v1_config(config)
+
+
+def test_non_utf8_manifest_is_rejected(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "invalid.tsv"
+    manifest_path.write_bytes(b"\xff\xfe\x00")
+    config = load_v1_config()
+    config["data"]["test_manifest"] = str(manifest_path)
+    with pytest.raises(ValueError, match="data.test_manifest cannot be read"):
+        validate_v1_config(config)
 
 
 @pytest.mark.parametrize(

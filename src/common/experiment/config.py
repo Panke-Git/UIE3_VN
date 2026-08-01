@@ -18,11 +18,6 @@ FIXED_MODEL_CONFIG = {
     "middle_blk_num": 4,
     "dec_blk_nums": [2, 2, 2],
 }
-FIXED_MANIFESTS = {
-    "train_manifest": "splits/lsui19/train.tsv",
-    "validation_manifest": "splits/lsui19/validation.tsv",
-    "test_manifest": "splits/lsui19/test.tsv",
-}
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _VERSION_KEYS = {"version", "variant", "model_version"}
 
@@ -213,11 +208,19 @@ def validate_v1_config(
         ),
     )
     _string(data, "data", "root")
-    for key, expected in FIXED_MANIFESTS.items():
+    for key in ("train_manifest", "validation_manifest", "test_manifest"):
         value = _string(data, "data", key)
-        _validate_relative_path(value, f"data.{key}")
-        if value != expected:
-            raise ValueError(f"data.{key} must equal {expected!r}.")
+        manifest_path = resolve_manifest_path(value)
+        if not manifest_path.is_file():
+            raise FileNotFoundError(
+                f"data.{key} does not exist or is not a file: {manifest_path}"
+            )
+        try:
+            manifest_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(
+                f"data.{key} cannot be read as UTF-8: {manifest_path}"
+            ) from exc
     if _integer(data, "data", "patch_size", minimum=1) != 256:
         raise ValueError("data.patch_size must equal 256 for v1.")
     if _integer(data, "data", "batch_size", minimum=1) != 4:
@@ -301,17 +304,13 @@ def validate_v1_config(
             "fail_on_nonfinite",
         ),
     )
-    epochs = _integer(training, "training", "epochs", minimum=1)
-    if epochs != 200:
-        raise ValueError("training.epochs must equal 200 for v1.")
+    _integer(training, "training", "epochs", minimum=1)
     _bool(training, "training", "amp")
     _bool(training, "training", "deterministic")
     validate_every = _integer(training, "training", "validate_every", minimum=1)
     if validate_every != 1:
         raise ValueError("training.validate_every must equal 1.")
-    save_every = _integer(training, "training", "save_every", minimum=1)
-    if save_every > epochs:
-        raise ValueError("training.save_every must not exceed training.epochs.")
+    _integer(training, "training", "save_every", minimum=1)
     gradient_clip = training.get("gradient_clip_norm")
     if gradient_clip is not None:
         _number(
@@ -483,6 +482,15 @@ def require_canonical_v1_config(path: Path | str) -> Path:
     """Backward-compatible alias for unrestricted v1 path resolution."""
 
     return resolve_v1_config_path(path)
+
+
+def resolve_manifest_path(path_value: str) -> Path:
+    """Resolve a YAML-provided manifest path without constraining its location."""
+
+    path = Path(path_value).expanduser()
+    if path.is_absolute():
+        return path.resolve(strict=False)
+    return (PROJECT_ROOT / path).resolve(strict=False)
 
 
 def resolve_project_path(relative_path: str) -> Path:
