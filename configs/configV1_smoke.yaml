@@ -41,7 +41,7 @@ scheduler:
   name: none
 
 training:
-  epochs: 2
+  epochs: 10
   amp: true
   deterministic: false
   validate_every: 1
