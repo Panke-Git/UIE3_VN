@@ -1,7 +1,7 @@
 experiment:
   version: v1
-  name: NAFNet_small_seed3407
-  seed: 3407
+  name: NAFNet_small_seed3520
+  seed: 3520
   output_root: experiments
 
 data:
