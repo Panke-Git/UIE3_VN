@@ -16,12 +16,13 @@ def test_unique_second_precision_run_and_config_snapshot(
     moment = datetime(2026, 7, 30, 22, 58, 0)
     first = experiment_module.create_experiment(config, now=moment)
     second = experiment_module.create_experiment(config, now=moment)
+    expected = re.escape(config["experiment"]["name"])
 
     assert re.fullmatch(
-        r"v1_NAFNet_small_seed1234_20260730_225800", first.root.name
+        rf"v1_{expected}_20260730_225800", first.root.name
     )
     assert re.fullmatch(
-        r"v1_NAFNet_small_seed1234_20260730_225800_[0-9a-f]{6}",
+        rf"v1_{expected}_20260730_225800_[0-9a-f]{{6}}",
         second.root.name,
     )
     assert first.root != second.root

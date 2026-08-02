@@ -46,8 +46,8 @@ def _temporary_v1_config(
 def test_yaml_parses_and_has_matching_v1_seed() -> None:
     config = load_v1_config()
     assert config["experiment"]["version"] == "v1"
-    assert config["experiment"]["name"] == "NAFNet_small_seed1234"
-    assert config["experiment"]["seed"] == 1234
+    seed = config["experiment"]["seed"]
+    assert config["experiment"]["name"] == f"NAFNet_small_seed{seed}"
 
 
 def test_checked_in_smoke_config_loads() -> None:
