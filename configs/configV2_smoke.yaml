@@ -1,0 +1,116 @@
+experiment:
+  version: v2
+  name: color_only_seed1234
+  variant: color_only
+  seed: 1234
+  output_root: experiments
+
+data:
+  root: /root/autodl-tmp/pro/publicdata/LSUI19_dup_train
+  train_manifest: splits/lsui19/train.tsv
+  validation_manifest: splits/lsui19/validation.tsv
+  test_manifest: splits/lsui19/test.tsv
+  patch_size: 256
+  batch_size: 16
+  num_workers: 4
+  pin_memory: true
+  pad_if_smaller: true
+  augmentation:
+    hflip: true
+    vflip: true
+    rot90: true
+
+model:
+  backbone:
+    type: nafnet_small
+    img_channel: 3
+    width: 32
+    enc_blk_nums: [2, 2, 2]
+    middle_blk_num: 4
+    dec_blk_nums: [2, 2, 2]
+
+  color_operator:
+    hidden_channels: 16
+    matrix_scale: 0.10
+    bias_scale: 0.05
+
+  scattering_operator:
+    hidden_channels: 16
+    t_min: 0.20
+    eps: 1.0e-6
+    residual_max: 0.10
+    initial_t: 0.95
+    initial_A: 0.50
+
+order_study:
+  color_then_scatter_loss_weight: 0.50
+  scatter_then_color_loss_weight: 0.50
+  shared_checkpoint_metric: mean_path_psnr
+
+loss:
+  name: charbonnier
+  epsilon: 0.001
+
+optimizer:
+  name: AdamW
+  learning_rate: 0.0002
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+
+scheduler:
+  name: none
+
+training:
+  epochs: 3
+  amp: true
+  deterministic: false
+  validate_every: 1
+  save_every: 10
+  gradient_clip_norm: null
+  resume: null
+  fail_on_nonfinite: true
+
+checkpoint:
+  primary: psnr
+  save_best_psnr: true
+  save_best_ssim: true
+  save_best_val_loss: true
+  save_last: true
+  save_periodic: true
+
+test:
+  auto_run_after_training: true
+  checkpoint: best_psnr
+  run_dir: null
+  allow_overwrite: false
+  save_all_enhanced_images: true
+  output_size: 256
+
+  visualization:
+    enabled: true
+    num_samples: 10
+    random_seed: 3407
+    columns:
+      - input
+      - enhanced
+      - gt
+    grid_rows: 10
+    grid_columns: 3
+    cell_width: 256
+    cell_height: 256
+    preserve_aspect_ratio: false
+    add_labels: false
+
+metrics:
+  data_range: 1.0
+  crop_border: 0
+  ssim_window_size: 11
+  ssim_sigma: 1.5
+
+logging:
+  console: true
+  save_train_log: true
+  save_validation_log: true
+  save_test_log: true
+  save_metrics_history_json: true
+  log_every_steps: 0
