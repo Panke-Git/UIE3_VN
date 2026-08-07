@@ -334,7 +334,10 @@ python -m src.analysis.v2_order_validation \
 ```
 
 By default it analyzes seeds `1234`, `3407`, and `3520`. For each seed it reads
-only `config.json`, `best/best_psnr.json`,
+the single matching timestamped directory, such as
+`v2_shared_order_diagnostic_seed1234_20260805_232118`. If more than one run
+matches a seed, analysis stops instead of silently choosing one. It reads only
+`config.json`, `best/best_psnr.json`,
 `result/best_psnr_validation_order_comparison.csv`, and
 `result/best_psnr_validation_summary.json`. The output directory contains a
 cross-seed per-image CSV and JSON summary, per-seed whole-image Oracle results,

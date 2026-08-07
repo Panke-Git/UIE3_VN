@@ -11,6 +11,7 @@ import copy
 import csv
 import json
 import math
+import re
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
@@ -1139,12 +1140,49 @@ def run_analysis(
         )
     root = Path(experiments_root).expanduser().resolve(strict=False)
     results = [
-        load_seed_validation_result(
-            root / f"shared_order_diagnostic_seed{seed}", seed=seed
-        )
+        load_seed_validation_result(discover_seed_run(root, seed=seed), seed=seed)
         for seed in seed_list
     ]
     return write_analysis_outputs(results, output_dir)
+
+
+def discover_seed_run(experiments_root: Path | str, *, seed: int) -> Path:
+    """Find one shared-order run, including the standard V2 timestamp suffix."""
+
+    root = Path(experiments_root).expanduser().resolve(strict=False)
+    if not root.is_dir():
+        raise FileNotFoundError(
+            f"Seed {seed} experiments root does not exist or is not a directory: {root}"
+        )
+    legacy_names = {
+        f"shared_order_diagnostic_seed{seed}",
+        f"v2_shared_order_diagnostic_seed{seed}",
+    }
+    timestamped_name = re.compile(
+        rf"^v2_shared_order_diagnostic_seed{seed}_"
+        rf"\d{{8}}_\d{{6}}(?:_[0-9a-f]{{6}})?$"
+    )
+    matches = sorted(
+        (
+            path.resolve(strict=False)
+            for path in root.iterdir()
+            if path.is_dir()
+            and (path.name in legacy_names or timestamped_name.fullmatch(path.name))
+        ),
+        key=lambda path: path.name,
+    )
+    if not matches:
+        raise FileNotFoundError(
+            f"Seed {seed} shared-order run was not found under {root}. Expected "
+            f"v2_shared_order_diagnostic_seed{seed}_YYYYMMDD_HHMMSS."
+        )
+    if len(matches) > 1:
+        rendered = ", ".join(str(path) for path in matches)
+        raise ValueError(
+            f"Seed {seed} has multiple shared-order runs under {root}; refusing "
+            f"to choose one silently: {rendered}"
+        )
+    return matches[0]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1158,7 +1196,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--experiments-root",
         type=Path,
         default=Path("experiments"),
-        help="Directory containing shared_order_diagnostic_seed<seed> runs.",
+        help=(
+            "Directory containing timestamped "
+            "v2_shared_order_diagnostic_seed<seed> runs."
+        ),
     )
     parser.add_argument(
         "--seeds",

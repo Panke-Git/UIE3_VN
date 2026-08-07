@@ -15,6 +15,7 @@ from src.analysis.v2_order_validation import (
     compute_cross_seed_per_image,
     compute_image_level_oracle,
     compute_threshold_stability,
+    discover_seed_run,
     load_seed_validation_result,
     run_analysis,
 )
@@ -156,6 +157,33 @@ def test_three_valid_seeds_can_be_analyzed_and_all_outputs_exist(tmp_path) -> No
     markdown = outputs["analysis_summary.md"].read_text(encoding="utf-8")
     assert "best validation" in markdown
     assert "does not use test" in markdown
+
+
+def test_timestamped_v2_run_directories_are_discovered(tmp_path) -> None:
+    experiments = tmp_path / "experiments"
+    timestamps = ("20260805_232118", "20260806_081226", "20260806_081254")
+    for seed, timestamp in zip(DEFAULT_SEEDS, timestamps):
+        original = _write_run(experiments, seed, [_sample("a", 30.0, 29.0)])
+        timestamped = experiments / (
+            f"v2_shared_order_diagnostic_seed{seed}_{timestamp}"
+        )
+        original.rename(timestamped)
+        assert discover_seed_run(experiments, seed=seed) == timestamped.resolve()
+    outputs = run_analysis(
+        experiments_root=experiments, output_dir=tmp_path / "analysis"
+    )
+    assert outputs["analysis_summary.md"].is_file()
+
+
+def test_multiple_timestamped_runs_for_one_seed_are_rejected(tmp_path) -> None:
+    experiments = tmp_path / "experiments"
+    original = _write_run(experiments, 1234, [_sample("a", 30.0, 29.0)])
+    first = experiments / "v2_shared_order_diagnostic_seed1234_20260805_232118"
+    original.rename(first)
+    second = experiments / "v2_shared_order_diagnostic_seed1234_20260806_010101"
+    second.mkdir()
+    with pytest.raises(ValueError, match="multiple shared-order runs"):
+        discover_seed_run(experiments, seed=1234)
 
 
 @pytest.mark.parametrize(
