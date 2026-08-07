@@ -321,6 +321,28 @@ history, and Python/NumPy/PyTorch/CUDA RNG state. Only `training.resume`,
 `test.run_dir`, and `test.allow_overwrite` may differ from the checkpoint
 configuration.
 
+### V2 Validation Order Analysis
+
+The offline V2 analysis compares completed `shared_order_diagnostic` runs at
+their best-validation checkpoints. It is not V3: it does not load a model,
+read test results, or modify any experiment. Run it with:
+
+```bash
+python -m src.analysis.v2_order_validation \
+  --experiments-root experiments \
+  --output-dir analysis_results/v2_validation_order
+```
+
+By default it analyzes seeds `1234`, `3407`, and `3520`. For each seed it reads
+only `config.json`, `best/best_psnr.json`,
+`result/best_psnr_validation_order_comparison.csv`, and
+`result/best_psnr_validation_summary.json`. The output directory contains a
+cross-seed per-image CSV and JSON summary, per-seed whole-image Oracle results,
+strict 0.05 dB stable-CS/stable-SC/unstable sample lists, and a Markdown
+summary. The Oracle chooses the higher-PSNR path independently for each
+validation image, so it is a theoretical upper bound rather than actual model
+performance.
+
 ## Checks
 
 Install a compatible PyTorch separately for the machine; do not let the
