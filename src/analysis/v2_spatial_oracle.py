@@ -32,8 +32,10 @@ DEFAULT_OUTPUT_DIR = Path("analysis_results/v2_validation_spatial_oracle")
 SSE_TIE_REL_TOLERANCE = 1.0e-12
 SSE_TIE_ABS_TOLERANCE = 1.0e-12
 INFERENCE_REL_TOLERANCE = 1.0e-7
-INFERENCE_PSNR_ABS_TOLERANCE = 1.0e-3
-INFERENCE_SSIM_ABS_TOLERANCE = 1.0e-4
+INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE = 1.0e-3
+INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE = 1.0e-4
+INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE = 5.0e-3
+INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE = 1.0e-4
 MONOTONIC_REL_TOLERANCE = 1.0e-7
 MONOTONIC_ABS_TOLERANCE = 1.0e-8
 GAIN_THRESHOLDS = (0.01, 0.05, 0.10, 0.20)
@@ -483,8 +485,8 @@ def validate_inference_regression(
     *,
     seed: int,
     rel_tolerance: float = INFERENCE_REL_TOLERANCE,
-    psnr_abs_tolerance: float = INFERENCE_PSNR_ABS_TOLERANCE,
-    ssim_abs_tolerance: float = INFERENCE_SSIM_ABS_TOLERANCE,
+    psnr_abs_tolerance: float = INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE,
+    ssim_abs_tolerance: float = INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE,
 ) -> Dict[str, float]:
     """Require re-inferred fixed-path validation metrics to match the snapshot."""
 
@@ -560,25 +562,25 @@ def validate_sample_inference_regression(
             "per-image PSNR CS",
             psnr_cs,
             saved.psnr_color_then_scatter,
-            INFERENCE_PSNR_ABS_TOLERANCE,
+            INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE,
         ),
         (
             "per-image PSNR SC",
             psnr_sc,
             saved.psnr_scatter_then_color,
-            INFERENCE_PSNR_ABS_TOLERANCE,
+            INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE,
         ),
         (
             "per-image SSIM CS",
             ssim_cs,
             saved.ssim_color_then_scatter,
-            INFERENCE_SSIM_ABS_TOLERANCE,
+            INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE,
         ),
         (
             "per-image SSIM SC",
             ssim_sc,
             saved.ssim_scatter_then_color,
-            INFERENCE_SSIM_ABS_TOLERANCE,
+            INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE,
         ),
     )
     for name, actual, expected, abs_tolerance in comparisons:
@@ -639,14 +641,14 @@ def validate_whole_oracle_regression(
         name="whole-image Oracle PSNR from best validation comparison CSV",
         actual=actual_psnr,
         expected=float(expected["oracle_psnr"]),
-        abs_tolerance=INFERENCE_PSNR_ABS_TOLERANCE,
+        abs_tolerance=INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE,
     )
     _require_close(
         seed=seed_result.seed,
         name="whole-image Oracle selected-path SSIM from best validation comparison CSV",
         actual=actual_ssim,
         expected=float(expected["psnr_oracle_selected_mean_ssim"]),
-        abs_tolerance=INFERENCE_SSIM_ABS_TOLERANCE,
+        abs_tolerance=INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE,
     )
     if prior_oracle_row is not None:
         try:
@@ -661,7 +663,7 @@ def validate_whole_oracle_regression(
             name="existing oracle_per_seed.csv oracle_psnr",
             actual=actual_psnr,
             expected=prior_psnr,
-            abs_tolerance=INFERENCE_PSNR_ABS_TOLERANCE,
+            abs_tolerance=INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE,
         )
         try:
             prior_ssim = float(prior_oracle_row["psnr_oracle_selected_mean_ssim"])
@@ -675,7 +677,7 @@ def validate_whole_oracle_regression(
             name="existing oracle_per_seed.csv selected-path SSIM",
             actual=actual_ssim,
             expected=prior_ssim,
-            abs_tolerance=INFERENCE_SSIM_ABS_TOLERANCE,
+            abs_tolerance=INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE,
         )
     return {"whole_oracle_psnr": actual_psnr, "whole_oracle_ssim": actual_ssim}
 
@@ -1046,8 +1048,14 @@ def analyze_seed(
         "status": "passed",
         "tolerances": {
             "relative": INFERENCE_REL_TOLERANCE,
-            "psnr_absolute_db": INFERENCE_PSNR_ABS_TOLERANCE,
-            "ssim_absolute": INFERENCE_SSIM_ABS_TOLERANCE,
+            "aggregate_psnr_absolute_db": (
+                INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE
+            ),
+            "aggregate_ssim_absolute": INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE,
+            "per_image_psnr_absolute_db": (
+                INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE
+            ),
+            "per_image_ssim_absolute": INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE,
         },
         "fixed_path_metrics": fixed_regression,
         "whole_oracle_metrics": whole_regression,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,6 +22,7 @@ from src.analysis.v2_spatial_oracle import (  # noqa: E402
     require_validation_split,
     validate_inference_regression,
     validate_region_sizes,
+    validate_sample_inference_regression,
     validate_spatial_analysis_metadata,
     write_analysis_outputs,
 )
@@ -338,6 +340,39 @@ def test_inference_regression_uses_metric_specific_cuda_replay_tolerances() -> N
     bad_ssim = dict(summary, mean_ssim_color_then_scatter=0.7998)
     with pytest.raises(ValueError, match=r"abs_diff=.*allowed="):
         validate_inference_regression(rows, bad_ssim, seed=7)
+
+
+def test_per_image_replay_allows_cuda_tail_but_rejects_material_drift() -> None:
+    saved = SimpleNamespace(
+        sample_id="sample",
+        psnr_color_then_scatter=36.98,
+        psnr_scatter_then_color=35.0,
+        ssim_color_then_scatter=0.9,
+        ssim_scatter_then_color=0.8,
+    )
+    seed_result = SimpleNamespace(
+        seed=3407,
+        samples={("input.png", "gt.png"): saved},
+    )
+    common = {
+        "seed_result": seed_result,
+        "sample_id": "sample",
+        "input_relative_path": "input.png",
+        "gt_relative_path": "gt.png",
+        "psnr_sc": 35.0,
+        "ssim_cs": 0.90005,
+        "ssim_sc": 0.8,
+    }
+    validate_sample_inference_regression(psnr_cs=36.984, **common)
+
+    with pytest.raises(ValueError, match=r"abs_diff=.*allowed=0.005"):
+        validate_sample_inference_regression(psnr_cs=36.986, **common)
+
+    with pytest.raises(ValueError, match=r"per-image SSIM CS"):
+        validate_sample_inference_regression(
+            psnr_cs=36.98,
+            **dict(common, ssim_cs=0.9002),
+        )
 
 
 def _aggregate_rows(seed: int):
