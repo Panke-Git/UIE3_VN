@@ -32,7 +32,8 @@ DEFAULT_OUTPUT_DIR = Path("analysis_results/v2_validation_spatial_oracle")
 SSE_TIE_REL_TOLERANCE = 1.0e-12
 SSE_TIE_ABS_TOLERANCE = 1.0e-12
 INFERENCE_REL_TOLERANCE = 1.0e-7
-INFERENCE_ABS_TOLERANCE = 1.0e-4
+INFERENCE_PSNR_ABS_TOLERANCE = 1.0e-3
+INFERENCE_SSIM_ABS_TOLERANCE = 1.0e-4
 MONOTONIC_REL_TOLERANCE = 1.0e-7
 MONOTONIC_ABS_TOLERANCE = 1.0e-8
 GAIN_THRESHOLDS = (0.01, 0.05, 0.10, 0.20)
@@ -458,15 +459,21 @@ def _require_close(
     name: str,
     actual: float,
     expected: float,
+    abs_tolerance: float,
     rel_tolerance: float = INFERENCE_REL_TOLERANCE,
-    abs_tolerance: float = INFERENCE_ABS_TOLERANCE,
 ) -> None:
     if not math.isclose(
         actual, expected, rel_tol=rel_tolerance, abs_tol=abs_tolerance
     ):
+        difference = abs(actual - expected)
+        allowed = max(
+            abs_tolerance,
+            rel_tolerance * max(abs(actual), abs(expected)),
+        )
         raise ValueError(
             f"Seed {seed} validation inference regression mismatch for {name}: "
-            f"saved={expected!r}, recomputed={actual!r}."
+            f"saved={expected!r}, recomputed={actual!r}, "
+            f"abs_diff={difference!r}, allowed={allowed!r}."
         )
 
 
@@ -476,7 +483,8 @@ def validate_inference_regression(
     *,
     seed: int,
     rel_tolerance: float = INFERENCE_REL_TOLERANCE,
-    abs_tolerance: float = INFERENCE_ABS_TOLERANCE,
+    psnr_abs_tolerance: float = INFERENCE_PSNR_ABS_TOLERANCE,
+    ssim_abs_tolerance: float = INFERENCE_SSIM_ABS_TOLERANCE,
 ) -> Dict[str, float]:
     """Require re-inferred fixed-path validation metrics to match the snapshot."""
 
@@ -512,7 +520,11 @@ def validate_inference_regression(
             actual=actual,
             expected=expected,
             rel_tolerance=rel_tolerance,
-            abs_tolerance=abs_tolerance,
+            abs_tolerance=(
+                psnr_abs_tolerance
+                if row_field.startswith("psnr_")
+                else ssim_abs_tolerance
+            ),
         )
         recomputed[summary_field] = actual
     return recomputed
@@ -544,17 +556,38 @@ def validate_sample_inference_regression(
             f"saved={saved.sample_id!r}, re-inferred={sample_id!r}."
         )
     comparisons = (
-        ("per-image PSNR CS", psnr_cs, saved.psnr_color_then_scatter),
-        ("per-image PSNR SC", psnr_sc, saved.psnr_scatter_then_color),
-        ("per-image SSIM CS", ssim_cs, saved.ssim_color_then_scatter),
-        ("per-image SSIM SC", ssim_sc, saved.ssim_scatter_then_color),
+        (
+            "per-image PSNR CS",
+            psnr_cs,
+            saved.psnr_color_then_scatter,
+            INFERENCE_PSNR_ABS_TOLERANCE,
+        ),
+        (
+            "per-image PSNR SC",
+            psnr_sc,
+            saved.psnr_scatter_then_color,
+            INFERENCE_PSNR_ABS_TOLERANCE,
+        ),
+        (
+            "per-image SSIM CS",
+            ssim_cs,
+            saved.ssim_color_then_scatter,
+            INFERENCE_SSIM_ABS_TOLERANCE,
+        ),
+        (
+            "per-image SSIM SC",
+            ssim_sc,
+            saved.ssim_scatter_then_color,
+            INFERENCE_SSIM_ABS_TOLERANCE,
+        ),
     )
-    for name, actual, expected in comparisons:
+    for name, actual, expected, abs_tolerance in comparisons:
         _require_close(
             seed=seed_result.seed,
             name=f"{name} for sample {sample_id}",
             actual=actual,
             expected=expected,
+            abs_tolerance=abs_tolerance,
         )
 
 
@@ -606,12 +639,14 @@ def validate_whole_oracle_regression(
         name="whole-image Oracle PSNR from best validation comparison CSV",
         actual=actual_psnr,
         expected=float(expected["oracle_psnr"]),
+        abs_tolerance=INFERENCE_PSNR_ABS_TOLERANCE,
     )
     _require_close(
         seed=seed_result.seed,
         name="whole-image Oracle selected-path SSIM from best validation comparison CSV",
         actual=actual_ssim,
         expected=float(expected["psnr_oracle_selected_mean_ssim"]),
+        abs_tolerance=INFERENCE_SSIM_ABS_TOLERANCE,
     )
     if prior_oracle_row is not None:
         try:
@@ -626,6 +661,7 @@ def validate_whole_oracle_regression(
             name="existing oracle_per_seed.csv oracle_psnr",
             actual=actual_psnr,
             expected=prior_psnr,
+            abs_tolerance=INFERENCE_PSNR_ABS_TOLERANCE,
         )
         try:
             prior_ssim = float(prior_oracle_row["psnr_oracle_selected_mean_ssim"])
@@ -639,6 +675,7 @@ def validate_whole_oracle_regression(
             name="existing oracle_per_seed.csv selected-path SSIM",
             actual=actual_ssim,
             expected=prior_ssim,
+            abs_tolerance=INFERENCE_SSIM_ABS_TOLERANCE,
         )
     return {"whole_oracle_psnr": actual_psnr, "whole_oracle_ssim": actual_ssim}
 
@@ -1007,6 +1044,11 @@ def analyze_seed(
     regression = {
         "seed": seed_result.seed,
         "status": "passed",
+        "tolerances": {
+            "relative": INFERENCE_REL_TOLERANCE,
+            "psnr_absolute_db": INFERENCE_PSNR_ABS_TOLERANCE,
+            "ssim_absolute": INFERENCE_SSIM_ABS_TOLERANCE,
+        },
         "fixed_path_metrics": fixed_regression,
         "whole_oracle_metrics": whole_regression,
         "saved_best_validation_epoch": seed_result.validation_summary["epoch"],

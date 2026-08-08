@@ -371,6 +371,12 @@ cross-seed summaries and tile-choice stability, a Markdown report, and only the
 five largest-gain visualization panels per scale. This is a theoretical
 validation upper-bound analysis, not V3 or an evaluation of a trained gate.
 
+Before inference, the analysis mirrors each run's saved seed and
+deterministic/cuDNN training settings. Its checkpoint replay guard allows only
+the small numerical drift expected from historical CUDA runs trained with
+`deterministic: false`: `1e-3` dB absolute PSNR error and `1e-4` absolute SSIM
+error. Larger differences still stop the analysis as a provenance regression.
+
 ## Checks
 
 Install a compatible PyTorch separately for the machine; do not let the

@@ -313,6 +313,33 @@ def test_inference_regression_match_and_mismatch() -> None:
         validate_inference_regression(rows, bad, seed=7)
 
 
+def test_inference_regression_uses_metric_specific_cuda_replay_tolerances() -> None:
+    rows = [
+        {
+            "psnr_cs": 30.0005,
+            "psnr_sc": 29.0,
+            "ssim_cs": 0.80005,
+            "ssim_sc": 0.7,
+        }
+    ]
+    summary = {
+        "num_samples": 1,
+        "mean_psnr_color_then_scatter": 30.0,
+        "mean_psnr_scatter_then_color": 29.0,
+        "mean_ssim_color_then_scatter": 0.8,
+        "mean_ssim_scatter_then_color": 0.7,
+    }
+    validate_inference_regression(rows, summary, seed=7)
+
+    bad_psnr = dict(summary, mean_psnr_color_then_scatter=29.999)
+    with pytest.raises(ValueError, match=r"abs_diff=.*allowed="):
+        validate_inference_regression(rows, bad_psnr, seed=7)
+
+    bad_ssim = dict(summary, mean_ssim_color_then_scatter=0.7998)
+    with pytest.raises(ValueError, match=r"abs_diff=.*allowed="):
+        validate_inference_regression(rows, bad_ssim, seed=7)
+
+
 def _aggregate_rows(seed: int):
     return [
         {
