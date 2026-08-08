@@ -346,6 +346,31 @@ summary. The Oracle chooses the higher-PSNR path independently for each
 validation image, so it is a theoretical upper bound rather than actual model
 performance.
 
+### V2 Multi-scale Validation Spatial Oracle Analysis
+
+The spatial Oracle analysis reloads each shared-order run's
+`best/best_psnr.pt`, strictly verifies its sidecar and run configuration, and
+re-runs only the complete validation manifest. It compares whole-image order
+selection with non-overlapping, top-left-aligned 128, 64, and 32 pixel grids:
+
+```bash
+python -m src.analysis.v2_spatial_oracle \
+  --experiments-root experiments \
+  --seeds 1234 3407 3520 \
+  --region-sizes 128 64 32 \
+  --output-dir analysis_results/v2_validation_spatial_oracle \
+  --device cuda
+```
+
+Each region selects C→S or S→C by RGB SSE after the same prediction clamp used
+by project metrics. Border regions are naturally truncated without resizing,
+padding, overlap, or discarded pixels. PSNR/SSIM are computed on each complete
+reconstructed Oracle image and then averaged across validation images; patch
+PSNR values are never averaged. Outputs include per-image/per-seed CSVs,
+cross-seed summaries and tile-choice stability, a Markdown report, and only the
+five largest-gain visualization panels per scale. This is a theoretical
+validation upper-bound analysis, not V3 or an evaluation of a trained gate.
+
 ## Checks
 
 Install a compatible PyTorch separately for the machine; do not let the

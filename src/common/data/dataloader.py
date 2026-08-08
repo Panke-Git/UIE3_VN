@@ -56,13 +56,7 @@ def build_dataloaders(
             generator=_generator(seed),
             **common,
         ),
-        "validation": DataLoader(
-            _dataset(config, "validation"),
-            batch_size=1,
-            shuffle=False,
-            generator=_generator(seed + 1),
-            **common,
-        ),
+        "validation": build_validation_dataloader(config),
     }
     if include_test:
         loaders["test"] = DataLoader(
@@ -88,4 +82,20 @@ def build_test_dataloader(config: Dict[str, Any]) -> DataLoader:
         pin_memory=bool(data["pin_memory"]),
         worker_init_fn=seed_worker,
         generator=_generator(seed + 2),
+    )
+
+
+def build_validation_dataloader(config: Dict[str, Any]) -> DataLoader:
+    """Build only the complete, ordered, non-augmented validation loader."""
+
+    data = config["data"]
+    seed = int(config["experiment"]["seed"])
+    return DataLoader(
+        _dataset(config, "validation"),
+        batch_size=1,
+        shuffle=False,
+        num_workers=int(data["num_workers"]),
+        pin_memory=bool(data["pin_memory"]),
+        worker_init_fn=seed_worker,
+        generator=_generator(seed + 1),
     )
