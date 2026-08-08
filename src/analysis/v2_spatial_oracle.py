@@ -405,6 +405,17 @@ def resolve_device(device_name: str, torch_module: Any) -> Any:
     return torch_module.device(device_name)
 
 
+def configure_inference_backend(config: Mapping[str, Any]) -> None:
+    """Mirror the training run's seed and deterministic/cuDNN settings."""
+
+    from src.common.experiment.seed import set_global_seed
+
+    set_global_seed(
+        int(config["experiment"]["seed"]),
+        deterministic=bool(config["training"]["deterministic"]),
+    )
+
+
 def _single_string(value: Any, field: str) -> str:
     if isinstance(value, str):
         return value
@@ -815,6 +826,9 @@ def analyze_seed(
         sidecar=seed_result.checkpoint_sidecar,
         split="validation",
     )
+    # A fresh analysis process otherwise keeps PyTorch's default cuDNN flags,
+    # which differ from training when training.deterministic is false.
+    configure_inference_backend(config)
     model.to(device).eval()
     # This helper accesses data.validation_manifest only; test loaders are never built.
     loader = build_validation_dataloader(config)

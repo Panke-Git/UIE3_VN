@@ -12,6 +12,7 @@ from src.analysis.v2_spatial_oracle import (  # noqa: E402
     aggregate_seed_rows,
     build_spatial_oracle_summary,
     classify_spatial_mix,
+    configure_inference_backend,
     compute_spatial_choice_stability,
     compute_spatial_oracle,
     reconstruct_spatial_oracle,
@@ -240,6 +241,27 @@ def test_spatial_split_variant_and_seed_guards() -> None:
             checkpoint=fixed_checkpoint,
             sidecar=fixed_sidecar,
         )
+
+
+@pytest.mark.parametrize("deterministic", [False, True])
+def test_inference_backend_matches_training_config(
+    monkeypatch, deterministic: bool
+) -> None:
+    from src.common.experiment import seed as seed_module
+
+    calls = []
+
+    def fake_set_global_seed(seed: int, *, deterministic: bool = False) -> None:
+        calls.append((seed, deterministic))
+
+    monkeypatch.setattr(seed_module, "set_global_seed", fake_set_global_seed)
+    configure_inference_backend(
+        {
+            "experiment": {"seed": 3407},
+            "training": {"deterministic": deterministic},
+        }
+    )
+    assert calls == [(3407, deterministic)]
 
 
 def test_validation_only_dataloader_never_requests_test_split(monkeypatch) -> None:
