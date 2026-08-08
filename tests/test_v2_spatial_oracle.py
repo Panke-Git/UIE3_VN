@@ -138,6 +138,27 @@ def test_refined_oracle_sse_and_psnr_are_monotonic() -> None:
     assert psnrs == sorted(psnrs)
 
 
+def test_monotonicity_allows_float32_psnr_reduction_roundoff() -> None:
+    coarse = SimpleNamespace(
+        reconstructed=SimpleNamespace(total_sse=2.0),
+        psnr=32.660850524902344,
+    )
+    fine = SimpleNamespace(
+        reconstructed=SimpleNamespace(total_sse=1.99),
+        psnr=32.66084671020508,
+    )
+    require_oracle_monotonicity([("coarse", coarse), ("fine", fine)])
+
+    materially_lower = SimpleNamespace(
+        reconstructed=SimpleNamespace(total_sse=1.99),
+        psnr=32.66082,
+    )
+    with pytest.raises(RuntimeError, match=r"abs_diff=.*allowed=1e-05"):
+        require_oracle_monotonicity(
+            [("coarse", coarse), ("fine", materially_lower)]
+        )
+
+
 def test_ssim_is_measured_from_psnr_sse_selected_reconstruction() -> None:
     target = torch.linspace(0.0, 1.0, 64).reshape(1, 1, 8, 8).repeat(1, 3, 1, 1)
     cs = target.clone()

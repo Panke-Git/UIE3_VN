@@ -95,6 +95,25 @@ def test_soft_is_not_worse_than_hard_and_refines_monotonically() -> None:
     assert psnrs == sorted(psnrs)
 
 
+def test_soft_hard_check_allows_float32_psnr_reduction_roundoff() -> None:
+    hard = SimpleNamespace(
+        reconstructed=SimpleNamespace(total_sse=2.0),
+        psnr=32.660850524902344,
+    )
+    soft = SimpleNamespace(
+        reconstructed=SimpleNamespace(total_sse=1.99),
+        psnr=32.66084671020508,
+    )
+    require_soft_not_worse_than_hard(soft, hard, label="32")
+
+    materially_lower = SimpleNamespace(
+        reconstructed=SimpleNamespace(total_sse=1.99),
+        psnr=32.66082,
+    )
+    with pytest.raises(ValueError, match=r"abs_diff=.*allowed=1e-05"):
+        require_soft_not_worse_than_hard(materially_lower, hard, label="32")
+
+
 def test_soft_metric_uses_complete_reconstruction_not_patch_psnr_mean() -> None:
     target = torch.zeros((1, 3, 3, 5))
     cs = torch.full_like(target, 0.1)

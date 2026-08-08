@@ -407,7 +407,9 @@ It reports Whole/128/64/32 Hard-versus-Soft headroom, alpha distributions,
 raw-alpha clipping and degenerate-region rates, per-image gain coverage, and
 cross-seed alpha correlation/category agreement. Only deterministic top-gain
 panels are saved; this remains a validation-only theoretical Oracle and does
-not train a fusion model or read test data.
+not train a fusion model or read test data. Hard/Soft and coarse/fine
+monotonicity use float64 SSE as the authoritative check; reported float32 PSNR
+may differ by up to `1e-5` dB to accommodate reduction rounding.
 
 ## Checks
 

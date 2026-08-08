@@ -37,7 +37,8 @@ INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE = 1.0e-4
 INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE = 5.0e-3
 INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE = 1.0e-4
 MONOTONIC_REL_TOLERANCE = 1.0e-7
-MONOTONIC_ABS_TOLERANCE = 1.0e-8
+MONOTONIC_SSE_ABS_TOLERANCE = 1.0e-8
+MONOTONIC_PSNR_ABS_TOLERANCE = 1.0e-5
 GAIN_THRESHOLDS = (0.01, 0.05, 0.10, 0.20)
 TOP_VISUALIZATIONS_PER_SCALE = 5
 
@@ -326,13 +327,15 @@ def require_oracle_monotonicity(
     levels: Sequence[tuple[str, MeasuredOracle]],
     *,
     rel_tolerance: float = MONOTONIC_REL_TOLERANCE,
-    abs_tolerance: float = MONOTONIC_ABS_TOLERANCE,
+    sse_abs_tolerance: float = MONOTONIC_SSE_ABS_TOLERANCE,
+    psnr_abs_tolerance: float = MONOTONIC_PSNR_ABS_TOLERANCE,
 ) -> None:
     """Reject a finer refinement whose SSE rises or whose PSNR falls."""
 
     for (coarse_name, coarse), (fine_name, fine) in zip(levels, levels[1:]):
         sse_tolerance = max(
-            abs_tolerance, rel_tolerance * max(abs(coarse.reconstructed.total_sse), 1.0)
+            sse_abs_tolerance,
+            rel_tolerance * max(abs(coarse.reconstructed.total_sse), 1.0),
         )
         if fine.reconstructed.total_sse > coarse.reconstructed.total_sse + sse_tolerance:
             raise RuntimeError(
@@ -340,10 +343,12 @@ def require_oracle_monotonicity(
                 f"{fine.reconstructed.total_sse!r} exceeds {coarse_name} SSE="
                 f"{coarse.reconstructed.total_sse!r}."
             )
-        if fine.psnr + abs_tolerance < coarse.psnr:
+        if fine.psnr + psnr_abs_tolerance < coarse.psnr:
             raise RuntimeError(
                 f"Spatial Oracle PSNR monotonicity violated: {fine_name} PSNR="
-                f"{fine.psnr!r} is below {coarse_name} PSNR={coarse.psnr!r}."
+                f"{fine.psnr!r} is below {coarse_name} PSNR={coarse.psnr!r}; "
+                f"abs_diff={coarse.psnr - fine.psnr!r}, "
+                f"allowed={psnr_abs_tolerance!r}."
             )
 
 

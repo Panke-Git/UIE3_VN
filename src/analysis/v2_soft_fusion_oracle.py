@@ -205,7 +205,7 @@ def require_soft_not_worse_than_hard(
     """Enforce that convex alpha endpoints contain every hard choice."""
 
     tolerance = max(
-        spatial.MONOTONIC_ABS_TOLERANCE,
+        spatial.MONOTONIC_SSE_ABS_TOLERANCE,
         spatial.MONOTONIC_REL_TOLERANCE
         * max(abs(hard_oracle.reconstructed.total_sse), 1.0),
     )
@@ -218,10 +218,15 @@ def require_soft_not_worse_than_hard(
             f"{soft_oracle.reconstructed.total_sse!r}, hard SSE="
             f"{hard_oracle.reconstructed.total_sse!r}."
         )
-    if soft_oracle.psnr + spatial.MONOTONIC_ABS_TOLERANCE < hard_oracle.psnr:
+    if (
+        soft_oracle.psnr + spatial.MONOTONIC_PSNR_ABS_TOLERANCE
+        < hard_oracle.psnr
+    ):
         raise ValueError(
             f"Soft Oracle PSNR is below Hard Oracle at {label}: soft="
-            f"{soft_oracle.psnr!r}, hard={hard_oracle.psnr!r}."
+            f"{soft_oracle.psnr!r}, hard={hard_oracle.psnr!r}, "
+            f"abs_diff={hard_oracle.psnr - soft_oracle.psnr!r}, "
+            f"allowed={spatial.MONOTONIC_PSNR_ABS_TOLERANCE!r}."
         )
 
 
