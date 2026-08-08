@@ -374,7 +374,7 @@ validation upper-bound analysis, not V3 or an evaluation of a trained gate.
 Before inference, the analysis mirrors each run's saved seed and
 deterministic/cuDNN training settings. Its checkpoint replay guard allows only
 the small numerical drift expected from historical CUDA runs trained with
-`deterministic: false`: at most `5e-3` dB per-image PSNR error and `1e-4`
+`deterministic: false`: at most `1e-2` dB per-image PSNR error and `1e-4`
 per-image SSIM error. The final 385-image means remain more strictly limited to
 `1e-3` dB PSNR and `1e-4` SSIM. Larger differences still stop the analysis as
 a provenance regression.

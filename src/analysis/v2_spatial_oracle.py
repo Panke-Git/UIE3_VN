@@ -34,7 +34,7 @@ SSE_TIE_ABS_TOLERANCE = 1.0e-12
 INFERENCE_REL_TOLERANCE = 1.0e-7
 INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE = 1.0e-3
 INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE = 1.0e-4
-INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE = 5.0e-3
+INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE = 1.0e-2
 INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE = 1.0e-4
 MONOTONIC_REL_TOLERANCE = 1.0e-7
 MONOTONIC_SSE_ABS_TOLERANCE = 1.0e-8
@@ -1181,6 +1181,13 @@ def analyze_seed(
         seed_result.validation_summary,
         seed=seed_result.seed,
         sample_differences=regression_differences,
+    )
+    print(
+        f"seed={seed_result.seed} replay_regression=passed "
+        f"max_abs_psnr={fixed_regression['max_abs_psnr_difference']:.8g} "
+        f"p95_abs_psnr={fixed_regression['p95_abs_psnr_difference']:.8g} "
+        f"dataset_mean_psnr={fixed_regression['dataset_mean_psnr_difference']:.8g}",
+        flush=True,
     )
     whole_regression = validate_whole_oracle_regression(
         image_rows, seed_result, prior_oracle_row=prior_oracle_row

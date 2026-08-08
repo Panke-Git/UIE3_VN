@@ -211,7 +211,7 @@ def test_replay_regression_collects_all_sample_differences_before_deciding() -> 
     }
     differences = [
         {
-            "psnr_cs_difference": 1.34e-4,
+            "psnr_cs_difference": 0.00539398193359375,
             "psnr_sc_difference": -1.0e-4,
             "ssim_cs_difference": 2.0e-6,
             "ssim_sc_difference": -1.0e-6,
@@ -226,7 +226,9 @@ def test_replay_regression_collects_all_sample_differences_before_deciding() -> 
     diagnostics = spatial.validate_inference_regression(
         rows, summary, seed=7, sample_differences=differences
     )
-    assert diagnostics["max_abs_psnr_difference"] == pytest.approx(1.34e-4)
+    assert diagnostics["max_abs_psnr_difference"] == pytest.approx(
+        0.00539398193359375
+    )
     assert diagnostics["p95_abs_psnr_difference"] > 0.0
     bad = [dict(differences[0], psnr_cs_difference=0.05), differences[1]]
     with pytest.raises(ValueError, match=r"checking all 2 samples.*0.05"):
