@@ -379,6 +379,36 @@ per-image SSIM error. The final 385-image means remain more strictly limited to
 `1e-3` dB PSNR and `1e-4` SSIM. Larger differences still stop the analysis as
 a provenance regression.
 
+### V2 Multi-scale Regional Soft Fusion Oracle Analysis
+
+The soft-fusion analysis plugs into that same validated checkpoint loading,
+validation inference, backend configuration, replay regression, clamp, metric,
+grid, and Hard Oracle path. It analytically solves one shared RGB coefficient
+per region:
+
+```text
+alpha_raw = <GT - SC, CS - SC> / ||CS - SC||²
+alpha = clamp(alpha_raw, 0, 1)
+soft = alpha * CS + (1 - alpha) * SC
+```
+
+Run it with:
+
+```bash
+python -m src.analysis.v2_soft_fusion_oracle \
+  --experiments-root experiments \
+  --seeds 1234 3407 3520 \
+  --region-sizes 128 64 32 \
+  --output-dir analysis_results/v2_validation_soft_fusion_oracle \
+  --device cuda
+```
+
+It reports Whole/128/64/32 Hard-versus-Soft headroom, alpha distributions,
+raw-alpha clipping and degenerate-region rates, per-image gain coverage, and
+cross-seed alpha correlation/category agreement. Only deterministic top-gain
+panels are saved; this remains a validation-only theoretical Oracle and does
+not train a fusion model or read test data.
+
 ## Checks
 
 Install a compatible PyTorch separately for the machine; do not let the

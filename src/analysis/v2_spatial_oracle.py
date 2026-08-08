@@ -487,8 +487,9 @@ def validate_inference_regression(
     rel_tolerance: float = INFERENCE_REL_TOLERANCE,
     psnr_abs_tolerance: float = INFERENCE_AGGREGATE_PSNR_ABS_TOLERANCE,
     ssim_abs_tolerance: float = INFERENCE_AGGREGATE_SSIM_ABS_TOLERANCE,
-) -> Dict[str, float]:
-    """Require re-inferred fixed-path validation metrics to match the snapshot."""
+    sample_differences: Optional[Sequence[Mapping[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Summarize all replay differences, then apply the validated tolerances."""
 
     if not rows:
         raise ValueError(f"Seed {seed} validation inference produced no samples.")
@@ -505,6 +506,7 @@ def validate_inference_regression(
         "mean_ssim_scatter_then_color": "ssim_sc",
     }
     recomputed: Dict[str, float] = {}
+    dataset_differences: Dict[str, float] = {}
     for summary_field, row_field in field_pairs.items():
         actual = statistics.fmean(float(row[row_field]) for row in rows)
         expected_raw = saved_summary.get(summary_field)
@@ -516,23 +518,106 @@ def validate_inference_regression(
                 f"got {expected_raw!r}."
             )
         expected = float(expected_raw)
-        _require_close(
-            seed=seed,
-            name=summary_field,
-            actual=actual,
-            expected=expected,
-            rel_tolerance=rel_tolerance,
-            abs_tolerance=(
-                psnr_abs_tolerance
-                if row_field.startswith("psnr_")
-                else ssim_abs_tolerance
-            ),
-        )
         recomputed[summary_field] = actual
-    return recomputed
+        dataset_differences[summary_field] = actual - expected
+
+    differences = list(sample_differences or [])
+    psnr_values = [
+        abs(float(row[field]))
+        for row in differences
+        for field in ("psnr_cs_difference", "psnr_sc_difference")
+    ]
+    ssim_values = [
+        abs(float(row[field]))
+        for row in differences
+        for field in ("ssim_cs_difference", "ssim_sc_difference")
+    ]
+    if not psnr_values:
+        psnr_values = [
+            abs(dataset_differences["mean_psnr_color_then_scatter"]),
+            abs(dataset_differences["mean_psnr_scatter_then_color"]),
+        ]
+    if not ssim_values:
+        ssim_values = [
+            abs(dataset_differences["mean_ssim_color_then_scatter"]),
+            abs(dataset_differences["mean_ssim_scatter_then_color"]),
+        ]
+
+    def percentile(values: Sequence[float], quantile: float) -> float:
+        ordered = sorted(values)
+        position = (len(ordered) - 1) * quantile
+        lower = math.floor(position)
+        upper = math.ceil(position)
+        if lower == upper:
+            return ordered[lower]
+        fraction = position - lower
+        return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+    max_psnr = max(psnr_values)
+    max_ssim = max(ssim_values)
+    dataset_psnr = max(
+        abs(dataset_differences["mean_psnr_color_then_scatter"]),
+        abs(dataset_differences["mean_psnr_scatter_then_color"]),
+    )
+    dataset_ssim = max(
+        abs(dataset_differences["mean_ssim_color_then_scatter"]),
+        abs(dataset_differences["mean_ssim_scatter_then_color"]),
+    )
+    per_image_psnr_limit = (
+        INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE
+        if differences
+        else psnr_abs_tolerance
+    )
+    per_image_ssim_limit = (
+        INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE
+        if differences
+        else ssim_abs_tolerance
+    )
+    violations = []
+    if max_psnr > per_image_psnr_limit:
+        violations.append(
+            f"max_abs_psnr_difference abs_diff={max_psnr!r}, "
+            f"allowed={per_image_psnr_limit!r}"
+        )
+    if max_ssim > per_image_ssim_limit:
+        violations.append(
+            f"max_abs_ssim_difference abs_diff={max_ssim!r}, "
+            f"allowed={per_image_ssim_limit!r}"
+        )
+    if dataset_psnr > psnr_abs_tolerance:
+        violations.append(
+            f"dataset_mean_psnr_difference abs_diff={dataset_psnr!r}, "
+            f"allowed={psnr_abs_tolerance!r}"
+        )
+    if dataset_ssim > ssim_abs_tolerance:
+        violations.append(
+            f"dataset_mean_ssim_difference abs_diff={dataset_ssim!r}, "
+            f"allowed={ssim_abs_tolerance!r}"
+        )
+    if violations:
+        raise ValueError(
+            f"Seed {seed} validation inference regression mismatch after "
+            f"checking all {len(rows)} samples: " + "; ".join(violations)
+        )
+    return {
+        **recomputed,
+        "status": "passed",
+        "num_samples": len(rows),
+        "max_abs_psnr_difference": max_psnr,
+        "mean_abs_psnr_difference": statistics.fmean(psnr_values),
+        "median_abs_psnr_difference": statistics.median(psnr_values),
+        "p95_abs_psnr_difference": percentile(psnr_values, 0.95),
+        "max_abs_ssim_difference": max_ssim,
+        "mean_abs_ssim_difference": statistics.fmean(ssim_values),
+        "median_abs_ssim_difference": statistics.median(ssim_values),
+        "p95_abs_ssim_difference": percentile(ssim_values, 0.95),
+        "dataset_mean_psnr_difference": dataset_psnr,
+        "dataset_mean_ssim_difference": dataset_ssim,
+        "dataset_mean_differences_by_path": dataset_differences,
+    }
 
 
-def validate_sample_inference_regression(
+def collect_sample_inference_difference(
     *,
     seed_result: SeedValidationResult,
     sample_id: str,
@@ -542,8 +627,8 @@ def validate_sample_inference_regression(
     psnr_sc: float,
     ssim_cs: float,
     ssim_sc: float,
-) -> None:
-    """Fail before spatial work if one re-inferred image misses its saved metrics."""
+) -> Dict[str, Any]:
+    """Align one saved/replayed sample and return signed metric differences."""
 
     key = (input_relative_path, gt_relative_path)
     saved = seed_result.samples.get(key)
@@ -557,38 +642,66 @@ def validate_sample_inference_regression(
             f"Seed {seed_result.seed} validation sample_id mismatch for {key!r}: "
             f"saved={saved.sample_id!r}, re-inferred={sample_id!r}."
         )
+    return {
+        "sample_id": sample_id,
+        "psnr_cs_difference": psnr_cs - saved.psnr_color_then_scatter,
+        "psnr_sc_difference": psnr_sc - saved.psnr_scatter_then_color,
+        "ssim_cs_difference": ssim_cs - saved.ssim_color_then_scatter,
+        "ssim_sc_difference": ssim_sc - saved.ssim_scatter_then_color,
+    }
+
+
+def validate_sample_inference_regression(
+    *,
+    seed_result: SeedValidationResult,
+    sample_id: str,
+    input_relative_path: str,
+    gt_relative_path: str,
+    psnr_cs: float,
+    psnr_sc: float,
+    ssim_cs: float,
+    ssim_sc: float,
+) -> None:
+    """Retain the public one-sample guard using the validated replay limits."""
+
+    differences = collect_sample_inference_difference(
+        seed_result=seed_result,
+        sample_id=sample_id,
+        input_relative_path=input_relative_path,
+        gt_relative_path=gt_relative_path,
+        psnr_cs=psnr_cs,
+        psnr_sc=psnr_sc,
+        ssim_cs=ssim_cs,
+        ssim_sc=ssim_sc,
+    )
     comparisons = (
         (
             "per-image PSNR CS",
-            psnr_cs,
-            saved.psnr_color_then_scatter,
+            differences["psnr_cs_difference"],
             INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE,
         ),
         (
             "per-image PSNR SC",
-            psnr_sc,
-            saved.psnr_scatter_then_color,
+            differences["psnr_sc_difference"],
             INFERENCE_PER_IMAGE_PSNR_ABS_TOLERANCE,
         ),
         (
             "per-image SSIM CS",
-            ssim_cs,
-            saved.ssim_color_then_scatter,
+            differences["ssim_cs_difference"],
             INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE,
         ),
         (
             "per-image SSIM SC",
-            ssim_sc,
-            saved.ssim_scatter_then_color,
+            differences["ssim_sc_difference"],
             INFERENCE_PER_IMAGE_SSIM_ABS_TOLERANCE,
         ),
     )
-    for name, actual, expected, abs_tolerance in comparisons:
+    for name, difference, abs_tolerance in comparisons:
         _require_close(
             seed=seed_result.seed,
             name=f"{name} for sample {sample_id}",
-            actual=actual,
-            expected=expected,
+            actual=float(difference),
+            expected=0.0,
             abs_tolerance=abs_tolerance,
         )
 
@@ -729,6 +842,8 @@ def _visualization_candidate_needed(
     sample_id: str,
     limit: int,
 ) -> bool:
+    if limit <= 0:
+        return False
     if len(bucket) < limit:
         return True
     candidate_key = (-gain_over_whole, seed, sample_id)
@@ -823,6 +938,7 @@ def analyze_seed(
     device: Any,
     prior_oracle_row: Optional[Mapping[str, Any]] = None,
     visualization_limit: int = TOP_VISUALIZATIONS_PER_SCALE,
+    sample_callback: Optional[Any] = None,
 ) -> tuple[
     list[Dict[str, Any]],
     list[Dict[str, Any]],
@@ -872,6 +988,7 @@ def analyze_seed(
     # This helper accesses data.validation_manifest only; test loaders are never built.
     loader = build_validation_dataloader(config)
     image_rows: list[Dict[str, Any]] = []
+    regression_differences: list[Dict[str, Any]] = []
     tile_rows: list[Dict[str, Any]] = []
     candidates: Dict[int, list[VisualizationCandidate]] = {
         size: [] for size in sizes
@@ -909,17 +1026,17 @@ def analyze_seed(
             )
             psnr_cs, ssim_cs = _path_metrics(prediction_cs, targets, metrics)
             psnr_sc, ssim_sc = _path_metrics(prediction_sc, targets, metrics)
-            # The saved per-image validation comparison is checked before any
-            # spatial Oracle computation for this sample.
-            validate_sample_inference_regression(
-                seed_result=seed_result,
-                sample_id=sample_id,
-                input_relative_path=input_path,
-                gt_relative_path=gt_path,
-                psnr_cs=psnr_cs,
-                psnr_sc=psnr_sc,
-                ssim_cs=ssim_cs,
-                ssim_sc=ssim_sc,
+            regression_differences.append(
+                collect_sample_inference_difference(
+                    seed_result=seed_result,
+                    sample_id=sample_id,
+                    input_relative_path=input_path,
+                    gt_relative_path=gt_path,
+                    psnr_cs=psnr_cs,
+                    psnr_sc=psnr_sc,
+                    ssim_cs=ssim_cs,
+                    ssim_sc=ssim_sc,
+                )
             )
             whole = compute_spatial_oracle(
                 prediction_cs,
@@ -941,6 +1058,24 @@ def analyze_seed(
                 [("whole", whole)]
                 + [(str(size), measured_by_size[size]) for size in sizes]
             )
+            if sample_callback is not None:
+                sample_callback(
+                    seed_result=seed_result,
+                    sample_id=sample_id,
+                    input_relative_path=input_path,
+                    gt_relative_path=gt_path,
+                    inputs=inputs,
+                    targets=targets,
+                    prediction_cs=prediction_cs,
+                    prediction_sc=prediction_sc,
+                    psnr_cs=psnr_cs,
+                    psnr_sc=psnr_sc,
+                    ssim_cs=ssim_cs,
+                    ssim_sc=ssim_sc,
+                    metrics_config=metrics,
+                    hard_whole=whole,
+                    hard_by_size=measured_by_size,
+                )
             height, width = targets.shape[-2:]
             row: Dict[str, Any] = {
                 "seed": seed_result.seed,
@@ -1037,7 +1172,10 @@ def analyze_seed(
             del inputs, targets, prediction_cs, prediction_sc, whole, measured_by_size
 
     fixed_regression = validate_inference_regression(
-        image_rows, seed_result.validation_summary, seed=seed_result.seed
+        image_rows,
+        seed_result.validation_summary,
+        seed=seed_result.seed,
+        sample_differences=regression_differences,
     )
     whole_regression = validate_whole_oracle_regression(
         image_rows, seed_result, prior_oracle_row=prior_oracle_row
